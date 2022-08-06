@@ -17,7 +17,7 @@ endmodule
 
 // -------------------------------------------------------------------------------
 
-module iecdrv_mem #(parameter DATAWIDTH, ADDRWIDTH, INITFILE=" ")
+module iecdrv_mem #(parameter DATAWIDTH, ADDRWIDTH, INITFILE="")
 (
 	input	                     clock_a,
 	input	     [ADDRWIDTH-1:0] address_a,
@@ -32,7 +32,8 @@ module iecdrv_mem #(parameter DATAWIDTH, ADDRWIDTH, INITFILE=" ")
 	output reg [DATAWIDTH-1:0] q_b
 );
 
-(* ram_init_file = INITFILE *) reg [DATAWIDTH-1:0] ram[1<<ADDRWIDTH];
+//(* ram_init_file = INITFILE *) 
+reg [DATAWIDTH-1:0] ram[1<<ADDRWIDTH];
 
 reg                 wren_a_d;
 reg [ADDRWIDTH-1:0] address_a_d;

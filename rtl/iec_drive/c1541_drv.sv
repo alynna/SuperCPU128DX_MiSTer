@@ -39,8 +39,10 @@ module c1541_drv
 	input         iec_atn_i,
 	input         iec_data_i,
 	input         iec_clk_i,
+	input         iec_fclk_i,
 	output        iec_data_o,
 	output        iec_clk_o,
+	output        iec_fclk_o,
 
 	// parallel bus
 	input   [7:0] par_data_i,
@@ -101,9 +103,10 @@ c1541_logic c1541_logic
 
 	// serial bus
 	.iec_clk_in(iec_clk_i),
+	.iec_fclk_in(iec_fclk_i),
 	.iec_data_in(iec_data_i),
 	.iec_atn_in(iec_atn_i),
-	.iec_clk_out(iec_clk_o),
+	.iec_clk_out(iec_clk_o | iec_fclk_o),
 	.iec_data_out(iec_data_o),
 
 	.ext_en(ext_en),

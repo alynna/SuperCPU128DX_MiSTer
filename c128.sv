@@ -209,12 +209,11 @@ localparam CONF_STR = {
 	//"-;",
 	"S0,D64G64D71D81,Mount Drive #8;",
 	"S1,D64G64D71D81,Mount Drive #9;",
-	"S2,D64G64D71D81,Mount Drive #10;",
-	"S3,T64,Mount Tape on #11;",
+	"S2,T64,Mount Tape on #10;",
 	"-;",
 	"F1,PRGCRTREUTAP;",
 	"h3-;",
-	"h3R7,Tape Play/Pause;",
+	"h3R7,PRESS PLAY ON TAPE;",
 	"h3RN,Tape Unload;",
 	"h3OB,Tape Sound,Off,On;",
 	"-;",
@@ -241,9 +240,9 @@ localparam CONF_STR = {
 	"d6P1oG,VDC memory,16k,64k;",
 
 	"P2,Hardware;",
+	"P2O[95],5.25 Drive Type,1571,1541;",
 	"P2oPQ,Enable Drive #8,If Mounted,Always,Never;",
 	"P2oNO,Enable Drive #9,If Mounted,Always,Never;",
-	"P2o[95:94],Enable Drive #10,If Mounted,Always,Never;",
 	"P2oC,Parallel port,Enabled,Disabled;",
 	"P2R6,Reset Disk Drives;",
 	"P2-;",
@@ -267,14 +266,21 @@ localparam CONF_STR = {
 	"P2oA,Pause When OSD is Open,No,Yes;",
 	"P2o7,Tape Autoplay,Yes,No;",
 	"P2-;",
-	"P2FC8,ROM,Syst. ROM1/4 C64+Kernal+Char;",
-	"P2FC9,ROM,Syst. ROM2/3 C128 Basic     ;",
-	"P2FCA,ROM,Function ROM                ;",
-	"P2FCB,ROM,1541/71/81 Drive ROMs       ;",
+	"P2FC8,ROMBIN,Syst. ROM1/4 C64+Kernal+Char;",
+	"P2FC9,ROMBIN,Syst. ROM2/3 C128 Basic     ;",
+	"P2FCA,ROMBIN,Function ROM                ;",
+	"P2OE,ROM set,128DCR,Standard;",
 	"P2-;",
 	"P2FC5,CRT,Boot Cartridge              ;",
 	"P2-;",
-	"P2OE,ROM set,128DCR,Standard;",
+	"P2FCC,ROMBIN,1541 Alternate Drive ROM    ;",
+	"P2FCD,ROMBIN,1571 Alternate Drive ROM    ;",
+	"P2FCE,ROMBIN,1581 Alternate Drive ROM    ;",
+	"P2-;",
+	"P2O[102],1541 ROM,Stock,Alternate;"
+	"P2O[103],1571 ROM,Stock,Alternate;"
+	"P2O[104],1581 ROM,Stock,Alternate;"
+	"P2-;",
 	"P2OF,Char switch,C64 mode,Caps Lk key;",
 	
 	// Please don't remove?
@@ -283,14 +289,11 @@ localparam CONF_STR = {
 	"P3-,+ May work * Likely to crash;",
 	"P3-,- Not implemented yet       ;",
 	"P3-;",
-	"P3O[98],*CPU,8502,85816;",
-	"P3O[105],+16MB RAM,No,Yes;",
-	"P30[104],*Burst mode line,No,Yes;",
-	"P30[108],?64 image uses 1571,No,Yes;",
+	"P3O[105],+8MB RAM,No,Yes;",
 	"P3O[99],-VDC regs at $D680,No,Yes;",
-	"P3O[101:100],-VDC RAM Exposed,No,Bank 3,Bank 15,FE0000;",
-	"P3O[102],-SuperCPU registers,No,Yes;",
-	"P3O[103],-RAM @ D200-D3FF,No,Yes;",
+
+	"P3O[101:100],-VDC RAM exposed at bank 127,No,Yes;",
+	"P3O[108],-RAM @ D200-D3FF,No,Yes;",
 	"P3O[107:106],*Turbo Switch,2mhz,4mhz,8mhz,- 20mhz;",
 	"-;",
 	"O3,Swap Joysticks,No,Yes;",
@@ -441,14 +444,14 @@ wire  [7:0] ioctl_data;
 wire  [7:0] ioctl_index;
 wire        ioctl_download;
 
-wire [31:0] sd_lba[3];
-wire  [5:0] sd_blk_cnt[3];
+wire [31:0] sd_lba[2];
+wire  [5:0] sd_blk_cnt[2];
 wire  [1:0] sd_rd;
 wire  [1:0] sd_wr;
 wire  [1:0] sd_ack;
 wire [13:0] sd_buff_addr;
 wire  [7:0] sd_buff_dout;
-wire  [7:0] sd_buff_din[3];
+wire  [7:0] sd_buff_din[2];
 wire        sd_buff_wr;
 wire  [2:0] img_mounted;
 wire [31:0] img_size;
@@ -1133,7 +1136,6 @@ fpga64_sid_iec fpga64
 	.cass_motor(cass_motor),
 	.cass_sense(~tape_adc_act & (use_tape ? cass_sense : cass_rtc)),
 	.cass_read(tape_adc_act ? ~tape_adc : cass_read),
-	.x816(status[98]),
 	.c128_n(c128_n),
 	.z80_n(z80_n)
 );
@@ -1158,7 +1160,7 @@ wire       c128_n;
 wire       z80_n;
 
 wire       c64_iec_clk;
-wire       c128_iec_fclk;
+wire       c128_iec_fclk = 1'b0; // Not connect to anything yet.
 wire       c64_iec_data;
 wire       c64_iec_atn;
 
@@ -1181,7 +1183,6 @@ reg [2:0] drive_mounted = 0;
 always @(posedge clk_sys) begin
 	if(img_mounted[0]) drive_mounted[0] <= |img_size;
 	if(img_mounted[1]) drive_mounted[1] <= |img_size;
-	if(img_mounted[2]) drive_mounted[2] <= |img_size;
 end
 
 iec_drive iec_drive
@@ -1195,9 +1196,10 @@ iec_drive iec_drive
 	.iec_atn_i(c64_iec_atn),
 	.iec_data_i(c64_iec_data & ext_iec_data),
 	.iec_clk_i(c64_iec_clk & ext_iec_clk),
-	.iec_fclk_i(c128_iec_fclk & ext_fiec_clk),
+	.iec_fclk_i(c128_iec_fclk & ext_iec_fclk),
 	.iec_data_o(drive_iec_data_o),
 	.iec_clk_o(drive_iec_clk_o),
+	.iec_fclk_o(drive_iec_fclk_o),
 
 	.pause(c64_pause),
 
@@ -1207,7 +1209,7 @@ iec_drive iec_drive
 	.img_type(ioctl_index[7:6]),
 	.img_mfm(1'b0),
 	.img_dblside(ioctl_index[7:6] == 2'b01),
-  .use_1571(status[108]),
+  .use_1571(~status[95]),
 	.led(drive_led),
 
 	.par_data_i(drive_par_i),
@@ -1227,10 +1229,11 @@ iec_drive iec_drive
 	.sd_buff_din(sd_buff_din),
 	.sd_buff_wr(sd_buff_wr),
 
+	.rom_index(ioctl_index),
 	.rom_addr(ioctl_addr),
 	.rom_data(ioctl_data),
 	.rom_wr(load_c15xx && ioctl_download && ioctl_wr),
-	.rom_std(status[14])
+	.rom_sel(status[104:102])
 );
 
 reg drive_ce;

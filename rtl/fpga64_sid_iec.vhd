@@ -188,7 +188,6 @@ port(
 	-- System mode
 	c128_n      : out std_logic;
 	z80_n       : out std_logic;
-	x816		: in  std_logic;
 	--test
 	osmode      : in  std_logic;
 	cpumode     : in  std_logic
@@ -1019,8 +1018,6 @@ port map (
 	addr => cpuAddr_T65,
 	do => cpuDo_T65,
 	we => cpuWe_T65,
-	x816 => x816,
-
 	diIO => cpuPO(7) & cpslk_sense_kb & cpuPO(5) & cass_sense & cpuPO(3) & "111",
 	doIO => cpuPO
 );

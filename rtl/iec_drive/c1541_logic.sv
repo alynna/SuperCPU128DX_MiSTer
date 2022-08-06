@@ -18,9 +18,11 @@ module c1541_logic
 
 	// serial bus
 	input        iec_clk_in,
+	input        iec_fclk_in,
 	input        iec_data_in,
 	input        iec_atn_in,
 	output       iec_clk_out,
+	output       iec_fclk_out,
 	output       iec_data_out,
 
 	input        ext_en,
