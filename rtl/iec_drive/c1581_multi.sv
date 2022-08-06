@@ -8,7 +8,7 @@
 //-------------------------------------------------------------------------------
 
 
-module c1581_multi #(parameter PARPORT=1,DRIVES=2);
+module c1581_multi #(parameter PARPORT=1,DRIVES=2)
 (
 	//clk ports
 	input         clk,
@@ -68,8 +68,6 @@ iecdrv_sync fclk_sync(clk, iec_fclk_i, iec_fclk);
 wire [N:0] reset_drv;
 iecdrv_sync #(NDR) rst_sync(clk, reset, reset_drv);
 
-wire stdrom = (PARPORT ? rom_std : 1'b1);
-
 reg ph2_r;
 reg ph2_f;
 reg wd_ce;
@@ -92,29 +90,16 @@ always @(posedge clk) begin
 end
 
 wire [7:0] rom_do;
-wire [7:0] romjiffy81_do;
 iecdrv_mem #(8,15,"rtl/iec_drive/c1581_rom.mif") rom
 (
 	.clock_a(clk_sys),
 	.address_a(rom_addr),
 	.data_a(rom_data),
-	.wren_a(PARPORT ? 1'b0 : rom_wr),
+	.wren_a(rom_wr),
 
 	.clock_b(clk),
 	.address_b(mem_a),
 	.q_b(rom_do)
-);
-
-iecdrv_mem #(8,15,"rtl/iec_drive/c1581_rom.mif") romjiffy81
-(
-	.clock_a(clk_sys),
-	.address_a(rom_addr),
-	.data_a(rom_data),
-	.wren_a(PARPORT ? 1'b0 : rom_wr),
-
-	.clock_b(clk),
-	.address_b(mem_a),
-	.q_b(romjiffy81_do)
 );
 
 reg  [14:0] mem_a;

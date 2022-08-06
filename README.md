@@ -14,14 +14,21 @@ Based on FPGA64 by Peter Wendrich with heavy later modifications by different pe
 - Booting in C64, C128 or CP/M mode
 - Automatic detection of .CRT files: C64 cartridges boot in C64 mode, C128 cartridges boot in C128 mode. C128 .CRT files must contain a [C128 CARTRIDGE](https://vice-emu.sourceforge.io/vice_17.html#SEC392) header to be detected.
 - Loading of .PRG files to the correct memory location in C128 mode.
+- Fast serial IEC
+- 1570/1571 drive, .d71/.g71 images
+
+### Implemented but untested
+
+The following features should work but have not been tested. If you have an opportunity to test this, please let me know the result by creating an issue on GitHub (for both success and failures)
+
+- External fast serial IEC (on the user port) \[[Issue #7](https://github.com/eriks5/C128_MiSTer/issues/7)\]
+- Parallel disk I/O on the 1571 (Dolphin DOS)
 
 ### C128 features not (yet/fully) implemented
 
 - VDC scrolling, interlace, 40 column mode, non-standard modes
 - Internal function ROM
-- Fast serial IEC
-- MFM .d81 images for CP/M (currently only .d64 or non-MFM .d81 disk images will work)
-- 1571 drive/.d71 images
+- MFM formatted disks on the 157x
 
 ### Extras being worked on
 - * 16mb RAM banked into banks 2 and 3 (mostly implemented)
@@ -68,9 +75,15 @@ Based on FPGA64 by Peter Wendrich with heavy later modifications by different pe
 - - Is it possible?  Writing point here to explore it...
 + = In progress
 * = Complete
+### Other TODOs and known issues
+
+- Automatic detection of C64/C128 .PRG files to boot in the appropriate mode.
+- Re-enable 3x and 4x turbo modes for 8502
+- Turbo mode for Z80
+
 ## Usage
 
-### Internal memory 
+### Internal memory
 
 In the OSD->Hardware menu, internal memory size can be selected as 128K or 256K. The latter activates RAM in banks 2 and 3. C128 basic does not detect this memory however, so it will
 still show 122365 bytes free.
@@ -102,7 +115,14 @@ These ROM files will *not* work with this core as they will overwrite the C128 k
 
 **Function rom**: Loads the internal function ROM. Not implemented yet.
 
-**Drive rom**: Loads the ROM for the disk drive.
+**Drive rom**: Loads the ROM for the disk drive. The file extension determines to which drive model the ROM image is applied to:
+
+ * `.R41`: ROM for the 1541 drive
+ * `.R70`: ROM for the 1570 drive
+ * `.R71`: ROM for the 1571 drive
+ * `.R81`: ROM for the 1581 drive
+
+For example, to load a Dolphin DOS ROM for the 1541, the filename must end with `.R41`, e.g. `DOLPHIN.R41`
 
 ### VDC/80 column mode
 
@@ -152,16 +172,35 @@ Keys marked in blue are the keys sent when combined with <kbd>AltGr</kbd>.
 
 ## C128 cartridges
 
-To load a cartridge - "External function ROM" in C128 terms - it must be in .CRT format. To convert a binary ROM image into a .CRT, the 
+To load a cartridge - "External function ROM" in C128 terms - it must be in .CRT format. To convert a binary ROM image into a .CRT, the
 [cartconv](https://vice-emu.sourceforge.io/vice_15.html) tool from Vice can be used, usually like this:
 
 `cartconv.exe -t c128 -l 0x8000 -i cart.bin -o cart.crt`
 
 The `-t c128` option is needed to create the correct header indicating this is a C128 cartridge. Otherwise the cartridge will be detected
-as a C64 cartridge and the core will start up in C64 mode like a real C128 would do if a C64 cartridge is inserted. 
+as a C64 cartridge and the core will start up in C64 mode like a real C128 would do if a C64 cartridge is inserted.
 
-The `-l 0x8000` option is needed to indicate the image should be located at address $8000. Some external ROMs might need to be located at $C000, 
+The `-l 0x8000` option is needed to indicate the image should be located at address $8000. Some external ROMs might need to be located at $C000,
 in that case `-l 0xC000` should be used.
+
+### USER_IO pins
+
+| USER_IO | USB 3.0 name | Signal name |
+|:-------:|:-------------|:------------|
+| 0       |    D+        | RS232 RX    |
+| 1       |    D-        | RS232 TX    |
+| 2       |    TX-       | IEC /CLK    |
+| 3       |    GND_d     | IEC /RESET  |
+| 4       |    RX+       | IEC /DATA   |
+| 5       |    RX-       | IEC /ATN    |
+| 6 :new: |    TX+       | IEC /SRQ    |
+
+All signals are 3.3V LVTTL and must be properly converted to required levels!
+
+The IEC/SRQ (USER_IO6) line is required for IEC fast serial operation with an external 157x or 1581 drive.
+You will need a MiSTer user port adapter that supports the SRQ line. C64 MiSTer user port to IEC adapters do not connect this line.
+
+:warning: External fast serial is currently untested. Use at your own risk.
 
 # C64 features
 
@@ -208,7 +247,7 @@ With maps above and using Dolphin DOS you can issue **F7** to list the files on 
 ~~Alternative ROM can loaded from OSD: Hardware->Load System ROM.
 Format is simple concatenation of BASIC + Kernal.rom + C1541.rom~~
 
-~~To create the ROM in DOS or Windows, gather your files in one place and use the following command from the DOS prompt. 
+~~To create the ROM in DOS or Windows, gather your files in one place and use the following command from the DOS prompt.
 The easiest place to acquire the ROM files is from the VICE distribution. BASIC and KERNAL are in the C64 directory,
 and dos1541 is in the Drives directory.~~
 
@@ -228,7 +267,7 @@ and dos1541 is in the Drives directory.~~
 In OSD->Hardware page you can choose Boot Cartridge, so everytime core loaded, this cartridge will be loaded too.
 
 ### Parallel port for disks.
-Are you tired from long loading times and fast loaders aren't really fast when comparing to other systems? 
+Are you tired from long loading times and fast loaders aren't really fast when comparing to other systems?
 
 Here is the solution:
 In OSD->System page choose **Expansion: Fast Disks**. Then load [DolphinDOS_2.0.rom](releases/DolphinDOS_2.0.rom). You will get about **20x times faster** loading from disks!
@@ -258,19 +297,6 @@ Supported standard 512KB, expanded 2MB with wrapping inside 512KB blocks (for co
 Support for REU files.
 
 GeoRAM and REU don't conflict each other and can be both enabled.
-
-### USER_IO pins
-
-| USER_IO | USB 3.0 name | Signal name |
-|:-------:|:-------------|:------------|
-|   0     |    D+        | RS232 RX    |
-|   1     |    D-        | RS232 TX    |
-|   2     |    TX-       | IEC /CLK    |
-|   3     |    GND_d     | IEC /RESET  |
-|   4     |    RX+       | IEC /DATA   |
-|   5     |    RX-       | IEC /ATN    |
-
-All signals are 3.3V LVTTL and must be properly converted to required levels!
 
 ### Real-time clock
 
