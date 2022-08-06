@@ -23,13 +23,51 @@ Based on FPGA64 by Peter Wendrich with heavy later modifications by different pe
 - MFM .d81 images for CP/M (currently only .d64 or non-MFM .d81 disk images will work)
 - 1571 drive/.d71 images
 
-### Other TODOs and known issues
-
-- Automatic detection of C64/C128 .PRG files to boot in the appropriate mode.
-- Re-enable 3x and 4x turbo modes for 8502
-- Turbo mode for Z80
-- Currently not possible to change 1541 ROM
-
+### Extras being worked on
+- * 16mb RAM banked into banks 2 and 3 (mostly implemented)
+- - MMU has been overhauled, will register as "version 2" with "up to 256 RAM banks".
+- - Currently wraps at 8mb, (128 RAM banks) some of the core seems to be at page 147 and above and accessing it crashes the machine.
+- - - Probably stuff in SDRAM needs to be reorganized.
+- - Think, VIC page flipping with hundreds of pages available.
+- - Implementation:
+- - - Check for 16mb MMU ($d50b = $x2)
+- - - Check how many pages have been provided ($x2) where x = 2^x pages available.
+- - Select one of available RAM banks (even 0 and 1) by placing a byte in $d50c for bank 2 and $d50d in bank 3.
+- - See the "C128MMUv2.txt" for more details.
+- + 85816 CPU (65816 with 6510/8502 glue) (partial implementation, issues)
+- - CPU MUX between t65 and SNES 65816 core built.  It can even kind of boot (but BASIC freaks out and there are timing issues) yet Run/stop Restore still responsive.
+- - 16mb RAM that can be banked in on MMUv2 will be directly accessible to the 65816.
+- - CPU_6510 now makes assumptions that there is 16mb of RAM and it can only see 64k of it.
+- - I/O registers only visible at 000000-000001
+- - Note this may end up being the 85832 (32 bit 65xx compatible) so stay tuned.
+- VDC RAM exposed to CPU (soon)
+- - This will allow people to draw directly to the VDC RAM.
+- - I don't know where it is currently mapped.  If Eric puts it somewhere in 040000-FEFFFF, then it will be able to be banked into bank 2 or 3 :)
+- - I will recommend its position be at $F00000 (banks 240-254) because I have plans for big VDC enhancements.
+- - Page 255 should be reserved for the 85816.
+- VDC registers exposed at $D680 (soon)
+- - Accessing the entire VDC through 2 registers ($d600/$d601) was a mistake by Commodore.  Lets fix that.
+- Enhanced VDC modes
+- - 256 color mode (CLUT)
+- - 640x400 progressive mode
+- - Maybe more ...
+- SD2IEC simulation
+- - Likely.  I feel like we should have some kind of mass storage solution lol
+- Sound .. is pretty already covered with 2 SIDs, and OPL2, and a Digimax.
+- - If there is room, might expand to 4 SIDs
+- SuperCPU 128 registers (later)
+- - Not all will be implemented because not all make sense on MiSTer, but the SuperCPU will be faked enough to allow applications targetting it to run.
+- 20mhz mode? (maybe)
+- - I hope.  Theres some barriers.  Depends on how fast a base clock we can have...
+- Backporting 85816/85832 to C64
+- - When it is stable, definitely.
+- - Backporting these other features, probably not, because the C128 *does* have a C64 mode.  And the C64 mode has access to much of this...
+- MMU exposed in C64 mode
+- - Is there a point?
+- Z80 SMP (Way later)
+- - Is it possible?  Writing point here to explore it...
++ = In progress
+* = Complete
 ## Usage
 
 ### Internal memory 
@@ -46,7 +84,7 @@ The ROM set option in the OSD->Hardware menu lets you switch between standard C1
 The Char switch option in the OSD->Hardware menu lets you select how the two character ROM banks are switched.
 
 English versions of the C128 switch character set depending on C128 or C64 mode, whereas international versions of the C128 have an "ASCII/DIN" key that replaces the "CAPS LOCK" key to 
-manually switch character sets. 
+manually switch character sets. Since the C128 keys are not implemented yet, setting this to "CAPS LOCK" locks the character set to C128 mode.
 
 ### Loadable ROM
 
@@ -68,23 +106,23 @@ These ROM files will *not* work with this core as they will overwrite the C128 k
 
 ### VDC/80 column mode
 
-Video output can be selected using the keyboard. Pressing <kbd>Print screen</kbd> or <kbd>AltGr</kbd>+<kbd>F7</kbd> emulates the <kbd>40/80 display</kbd> toggle switch on the C128 keyboard.
+Video output can be selected using the keyboard. Pressing <kbd>*</kbd> or <kbd>AltGr</kbd>+<kbd>F7</kbd> emulates the <kbd>40/80 display</kbd> toggle switch on the C128 keyboard.
 This will also switch which video output is shown on the VGA/HDMI output of the MiSTer.
 
 In OSD->Audio&Video the VDC version and memory size can be selected.
 
 ### Keyboard
-* <kbd>End</kbd> - <kbd>Run stop</kbd>
-* <kbd>F2</kbd>, <kbd>F4</kbd>, <kbd>F6</kbd>, <kbd>F8</kbd>, <kbd>Left</kbd>/<kbd>Up</kbd> keys automatically activate <kbd>Shift</kbd> key.
-* <kbd>F9</kbd> - <kbd>&#129145;</kbd> key.
+* <kbd>F2</kbd>, <kbd>F4</kbd> , <kbd>F6</kbd> , <kbd>F8</kbd> , <kbd>Left</kbd>/<kbd>Up</kbd> keys automatically activate <kbd>Shift</kbd> key.
+* <kbd>F9</kbd> - arrow-up key.
 * <kbd>F10</kbd> - <kbd>=</kbd> key.
-* <kbd>F11</kbd> - <kbd>Restore</kbd> key. Also special key in AR/FC carts.
+* <kbd>F11</kbd> - <kbd>restore</kbd> key. Also special key in AR/FC carts.
 * Meta keys (Win/Apple) - <kbd>C=</kbd> key.
 * <kbd>PgUp</kbd> - Tape play/pause
 * <kbd>PgDn</kbd> - <kbd>Line feed</kbd>
-* <kbd>Print Screen</kbd> - <kbd>Display 40/80</kbd>
+* <kbd>End</kbd> - <kbd>Help</kbd>
 * <kbd>Pause/Break</kbd> - <kbd>No Scroll</kbd> (* see note below)
-* Numpad <kbd>*</kbd> - <kbd>Help</kbd>
+* Numpad <kbd>/</kbd> - <kbd>Esc</kbd>
+* Numpad <kbd>*</kbd> - <kbd>Display 40/80</kbd>
 
 The <kbd>AltGr</kbd> key (right <kbd>Alt</kbd>) is used to access alternative function keys. Combined with <kbd>AltGr</kbd> the function keys are the C128 top-row special keys. To access these functions, press and hold <kbd>AltGr</kbd> while pressing any of the function keys:
 * <kbd>AltGr</kbd>+<kbd>F1</kbd> - <kbd>Esc</kbd>
@@ -243,4 +281,3 @@ To get real time in GEOS, copy CP-CLOCK64-1.3 from supplied [disk](https://githu
 
 C1541 implementation works in raw GCR mode (D64 format is converted to GCR and then back when saved), so some non-standard tracks are supported if G64 file format is used. Support formatting and some copiers using raw track copy. Speed zones aren't supported (yet), but system follows the speed setting, so variable speed within a track should work.
 Protected disk in most cases won't work yet and still require further tuning of access times to comply with different protections.
-
