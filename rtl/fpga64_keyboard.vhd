@@ -178,7 +178,7 @@ architecture rtl of fpga64_keyboard is
 	signal key_enter: std_logic := '0';
 	signal key_noscroll: std_logic := '0';
 	signal key_help: std_logic := '0';
-	signal key_linefeed: std_logic := '0';
+	signal key_linefd: std_logic := '0';
 
 	-- for joystick emulation on PS2
 	signal old_state : std_logic;
@@ -299,7 +299,7 @@ begin
 				(pbi(5) or not key_S) and
 				(pbi(6) or not key_E) and
 				(pbi(7) or not (
-					key_inst
+					key_inst 
 					or ((key_left or key_up) and not key_fn) 
 					or ((key_F2 or key_F4 or key_F6 or key_F8) and not key_fn) 
 					or ((key_shiftl or shift_lock_state) and not key_8s)
@@ -351,7 +351,7 @@ begin
 				(pbi(2) or not key_semicolon) and
 				(pbi(3) or not key_home) and
 				(pbi(4) or not (
-					key_inst
+					key_inst 
 					or ((key_left or key_up) and not key_fn) 
 					or ((key_F2 or key_F4 or key_F6 or key_F8) and not key_fn) 
 					or (key_shiftr and not key_8s)
@@ -417,7 +417,7 @@ begin
 				(pai(6) or not key_home) and
 				(pai(7) or not (key_2 and not key_fn)) and
 				(ki(0) or not (key_tab or (key_F3 and key_fn))) and
-				(ki(1) or not (key_linefeed or (key_F6 and key_fn))) and
+				(ki(1) or not (key_linefd or (key_F6 and key_fn))) and
 				(ki(2) or not (key_up and key_fn));
 			pbo(4) <= pbi(4) and joyA(4) and
 				(pai(0) or not ((key_F1 or key_F2) and not key_fn)) and
@@ -427,7 +427,7 @@ begin
 				(pai(4) or not key_M) and
 				(pai(5) or not (key_dot and not key_fn)) and
 				(pai(6) or not (
-					key_inst
+					key_inst 
 					or ((key_left or key_up) and not key_fn)
 					or ((key_F2 or key_F4 or key_F6 or key_F8) and not key_fn) 
 					or (key_shiftr and not key_8s)
@@ -463,7 +463,7 @@ begin
 			pbo(7) <= pbi(7) and
 				(pai(0) or not ((key_up or key_down) and not key_fn)) and
 				(pai(1) or not (
-					key_inst
+					key_inst 
 					or ((key_left or key_up) and not key_fn) 
 					or ((key_F2 or key_F4 or key_F6 or key_F8) and not key_fn) 
 					or ((key_shiftl or shift_lock_state) and not key_8s)
@@ -492,7 +492,7 @@ begin
 					when X"09" => key_equal <= pressed; -- F10
 					when X"0D" => key_tab <= pressed;
 					when X"0E" => key_arrowleft <= pressed;
-					when X"11" => key_fn <= pressed; -- Alt (right)
+					when X"11" => if extended then key_fn <= pressed; else key_alt <= pressed; end if; -- AltGr / Alt
 					when X"12" => key_shiftl <= pressed;
 					when X"14" => key_ctrl <= pressed; -- Ctrl (left+right)
 					when X"15" => key_Q <= pressed;
@@ -540,7 +540,7 @@ begin
 					when X"46" => key_8 <= pressed and     key_shift;
 									  key_9 <= pressed and not key_shift;
 					when X"49" => key_dot <= pressed;
-					when X"4A" => if extended then key_esc <= pressed; else key_slash <= pressed; end if;
+					when X"4A" => if not extended then key_slash <= pressed; end if;
 					when X"4B" => key_L <= pressed;
 					when X"4C" => key_colon <= pressed;
 					when X"4D" => key_P <= pressed;
@@ -554,7 +554,7 @@ begin
 					when X"5B" => key_star <= pressed;
 					when X"5D" => key_pound <= pressed;
 					when X"66" => key_del <= pressed;
-					when X"69" => if extended then key_help    <= pressed; else key_num1   <= pressed; end if;
+					when X"69" => if extended then key_runstop <= pressed; else key_num1   <= pressed; end if;
 					when X"6B" => if extended then key_left    <= pressed; else key_num4   <= pressed; end if;
 					when X"6C" => if extended then key_home    <= pressed; else key_num7   <= pressed; end if;
 					when X"70" => if extended then key_inst    <= pressed; else key_num0   <= pressed; end if;
@@ -563,7 +563,7 @@ begin
 					when X"73" => key_num5 <= pressed;
 					when X"74" => if extended then key_right   <= pressed; else key_num6   <= pressed; end if;
 					when X"75" => if extended then key_up      <= pressed; else key_num8   <= pressed; end if;
-					when X"76" => key_runstop <= pressed;
+					when X"76" => key_esc <= pressed;
 					when X"77" => if extended and pressed = '1' and ps2_key /= last_key then 
 						if noscroll_lock = '1' then
 							noscroll_lock <= '0';
@@ -577,12 +577,12 @@ begin
 						end if;
 						noscroll_delay <= C_NOSCROLL_DELAY; 
 					end if;
-					when X"78" => restore_key <= pressed; -- F11
+					when X"78" => restore_key <= pressed;
 					when X"79" => key_numplus <= pressed;
-					when X"7A" => if extended then key_linefeed <= pressed; else key_num3   <= pressed; end if;
+					when X"7A" => if extended then key_linefd  <= pressed; else key_num3   <= pressed; end if;
 					when X"7B" => key_numminus <= pressed;
-					when X"7C" => key_d4080 <= pressed;
-					when X"7D" => if extended then tape_play <= pressed; else key_num9   <= pressed; end if;
+					when X"7C" => if extended then key_d4080   <= pressed; else key_help   <= pressed; end if;
+					when X"7D" => if extended then tape_play   <= pressed; else key_num9   <= pressed; end if;
 					when others => null;
 				end case;
 			end if;
@@ -684,7 +684,7 @@ begin
 					key_enter     <= '0';
 					key_noscroll  <= '0';
 					key_help      <= '0';
-					key_linefeed  <= '0';
+					key_linefd    <= '0';
 					noscroll_lock <= '0';
 			end if;
 

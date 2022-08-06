@@ -36,7 +36,7 @@ entity fpga64_buslogic is
 		cpuHasBus   : in std_logic;
 		aec         : in std_logic;
 		z80io       : in std_logic;
-		z80m1n      : in std_logic;
+		z80m1       : in std_logic;
 
 		ramData     : in unsigned(7 downto 0);
 
@@ -52,7 +52,7 @@ entity fpga64_buslogic is
 		mmu_rombank : in unsigned(1 downto 0);  
 		mmu_iosel   : in std_logic;
 		tAddr       : in unsigned(15 downto 0); -- Translated address bus
-		cpuBank     : in unsigned(7 downto 0);
+		cpuBank     : in unsigned(1 downto 0);
 		vicBank     : in unsigned(1 downto 0);
 
 		-- From Keyboard
@@ -87,7 +87,7 @@ entity fpga64_buslogic is
 		io_enable   : in std_logic;
 
 		systemWe    : out std_logic;
-		systemAddr  : out unsigned(23 downto 0);
+		systemAddr  : out unsigned(17 downto 0);
 		dataToCpu   : out unsigned(7 downto 0);
 		dataToVic   : out unsigned(7 downto 0);
 
@@ -155,7 +155,7 @@ architecture rtl of fpga64_buslogic is
 	signal rom23_a14      : std_logic;
 	signal ultimax        : std_logic;
 
-	signal currentAddr    : unsigned(23 downto 0);
+	signal currentAddr    : unsigned(17 downto 0);
 	
 
 begin
@@ -209,6 +209,10 @@ begin
 		wrclock => clk,
 		rdclock => clk,
 
+		wren => rom23_wr,
+		data => rom_data,
+		wraddress => rom_addr(14 downto 0),
+
 		rdaddress => std_logic_vector(not cpuAddr(14) & cpuAddr(13 downto 0)),
 		q => rom23Data_dcr
 	);
@@ -220,10 +224,6 @@ begin
 		wrclock => clk,
 		rdclock => clk,
 
-		wren => rom23_wr,
-		data => rom_data,
-		wraddress => rom_addr(14 downto 0),
-		
 		rdaddress => std_logic_vector(not cpuAddr(14) & cpuAddr(13 downto 0)),
 		q => rom23Data_std
 	);
@@ -244,6 +244,10 @@ begin
 		wrclock => clk,
 		rdclock => clk,
 
+		wren => rom14_wr and not rom_addr(15) and rom_addr(14),
+		data => rom_data,
+		wraddress => rom_addr(13 downto 0),
+
 		rdaddress => std_logic_vector(cpuAddr(13) & tAddr(12) & cpuAddr(11 downto 0)),
 		q => rom4Data_dcr
 	);
@@ -255,10 +259,6 @@ begin
 		wrclock => clk,
 		rdclock => clk,
 
-		wren => rom14_wr and not rom_addr(15) and rom_addr(14),
-		data => rom_data,
-		wraddress => rom_addr(13 downto 0),
-		
 		rdaddress => std_logic_vector(cpuAddr(13) & tAddr(12) & cpuAddr(11 downto 0)),
 		q => rom4Data_std
 	);
@@ -285,7 +285,7 @@ begin
 	begin
 		if rising_edge(clk) then
 			if reset = '1' then
-				dcr_ena        <= dcr;
+				dcr_ena <= dcr;
 			end if;
 		end if;
 	end process;
@@ -348,7 +348,7 @@ begin
 
 	process(
 		cpuHasBus, cpuAddr, tAddr, ultimax, cpuWe, bankSwitch, exrom, game, aec, vicAddr,
-		c128_n, z80_n, z80io, z80m1n, mmu_rombank, mmu_iosel, cpuBank, vicBank
+		c128_n, z80_n, z80io, z80m1, mmu_rombank, mmu_iosel, cpuBank, vicBank
 	)
 	begin
 		currentAddr <= (others => '1');
@@ -382,7 +382,7 @@ begin
 			if c128_n = '0' then
 				-- C128
 
-				-- Using untranslated address								 
+				-- Using untranslated address
 				case cpuAddr(15 downto 12) is
 				when X"C" | X"E" | X"F" =>
 					if cpuAddr(15 downto 4) = X"FF0" and cpuAddr(3 downto 0) < X"5" then
@@ -402,32 +402,28 @@ begin
 						cs_ramLoc <= '1';
 					end if;
 				when X"D" =>
-					if (mmu_iosel = '0' or (z80_n = '0' and z80io = '1')) then
+					if ((z80_n = '1' and mmu_iosel = '0') or (z80_n = '0' and z80io = '1')) then
 						case cpuAddr(11 downto 8) is
 							when X"0" | X"1" | X"2" | X"3" =>
 								cs_vicLoc <= '1';
 							when X"4" =>
-								cs_sidLoc <= z80m1n;
-							when X"5" =>
+								cs_sidLoc <= not z80m1;
+							when X"5" => 
 								if mmu_iosel = '0' then
 									cs_mmuLLoc <= '1';
 								end if;
 							when X"6" =>
-								cs_vdcLoc <= z80m1n;
+								cs_vdcLoc <= not z80m1;
 							when X"8" | X"9" | X"A" | X"B" =>
-								if (z80_n = '1' or z80io = '1') then
-									cs_colorLoc <= '1';
-								else
-									cs_ramLoc <= '1';
-								end if;
+								cs_colorLoc <= '1';
 							when X"C" =>
-								cs_cia1Loc <= z80m1n;
+								cs_cia1Loc <= not z80m1;
 							when X"D" =>
-								cs_cia2Loc <= z80m1n;
+								cs_cia2Loc <= not z80m1;
 							when X"E" =>
-								cs_ioELoc <= z80m1n;
+								cs_ioELoc <= not z80m1;
 							when X"F" =>
-								cs_ioFLoc <= z80m1n;
+								cs_ioFLoc <= not z80m1;
 							when others =>
 								null;
 						end case;
@@ -449,7 +445,7 @@ begin
 					else
 						cs_ramLoc <= '1';
 					end if;
-				when X"8" | X"9" | X"A" | X"B" =>
+				when X"4" | X"5" | X"6" | X"7" | X"8" | X"9" | X"A" | X"B" =>
 					if cpuWe = '0' then
 						case mmu_rombank is
 							when B"00" =>
@@ -461,12 +457,6 @@ begin
 							when B"11" =>
 								cs_ramLoc <= '1';
 						end case;
-					else
-						cs_ramLoc <= '1';
-					end if;
-				when X"4" | X"5" | X"6" | X"7" =>
-					if cpuWe = '0' and mmu_rombank(0) = '0' then
-						cs_rom23Loc <= '1';
 					else
 						cs_ramLoc <= '1';
 					end if;
@@ -514,19 +504,19 @@ begin
 							when X"0" | X"1" | X"2" | X"3" =>
 								cs_vicLoc <= '1';
 							when X"4" =>
-								cs_sidLoc <= z80m1n;
+								cs_sidLoc <= not z80m1;
 							when X"6" =>
-								cs_vdcLoc <= z80m1n;
+								cs_vdcLoc <= not z80m1;
 							when X"8" | X"9" | X"A" | X"B" =>
 								cs_colorLoc <= '1';
 							when X"C" =>
-								cs_cia1Loc <= z80m1n;
+								cs_cia1Loc <= not z80m1;
 							when X"D" =>
-								cs_cia2Loc <= z80m1n;
+								cs_cia2Loc <= not z80m1;
 							when X"E" =>
-								cs_ioELoc <= z80m1n;
+								cs_ioELoc <= not z80m1;
 							when X"F" =>
-								cs_ioFLoc <= z80m1n;
+								cs_ioFLoc <= not z80m1;
 							when others =>
 								null;
 						end case;
@@ -578,7 +568,7 @@ begin
 		else
 			-- The VIC-II has the bus, but only when aec is asserted
 			if aec = '1' then
-				currentAddr <= "000000" & vicBank & vicAddr;
+				currentAddr <= vicBank & vicAddr;
 			else
 				currentAddr <= cpuBank & tAddr;
 			end if;

@@ -192,28 +192,21 @@ assign VGA_SCALER = 0;
 // 0         1         2         3          4         5         6
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXX 
-//
-// Alynna note:
-// This could be entirely converted to 128 bit status format but it 
-// seems the formats are compatible with eachother.  I have started
-// using bits 96:127.
-
+// XXXXXXXXXXXXXXXXXXXXXX XXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXX   
 
 `include "build_id.v"
 localparam CONF_STR = {
 	"C128;UART9600:2400;",
-	"o[97:96],Boot Mode,C128 (40),C128 (80),C64;",
+	//"oUV,Boot Mode,Z80,C128,C64;", // for testing
 	//"-;",
 	//"oR,Video output,VIC (40 col),VDC (80 col);",
 	//"-;",
-	"S0,D64G64D71D81,Mount Drive #8;",
-	"S1,D64G64D71D81,Mount Drive #9;",
-	"S2,T64,Mount Tape on #10;",
+	"H7S0,D64G64T64D81,Mount #8;",
+	"H0S1,D64G64T64D81,Mount #9;",
 	"-;",
 	"F1,PRGCRTREUTAP;",
 	"h3-;",
-	"h3R7,PRESS PLAY ON TAPE;",
+	"h3R7,Tape Play/Pause;",
 	"h3RN,Tape Unload;",
 	"h3OB,Tape Sound,Off,On;",
 	"-;",
@@ -229,7 +222,7 @@ localparam CONF_STR = {
 	"d4P1o23,Left Filter,Default,Custom 1,Custom 2,Custom 3;",
 	"P1OG,Right SID,8580,6581;",
 	"d5P1o56,Right Filter,Default,Custom 1,Custom 2,Custom 3;",
-	"P1OKM,Right SID Port,Same,DE00,D420,D500,DF00;",
+	"P1OKL,Right SID Port,Same,D420,DE00,DF00;",
 	"P1FC7,FLT,Load Custom Filters;",
 	"P1-;",
 	"P1OC,Sound Expander,Disabled,OPL2;",
@@ -240,7 +233,6 @@ localparam CONF_STR = {
 	"d6P1oG,VDC memory,16k,64k;",
 
 	"P2,Hardware;",
-	"P2O[95],5.25 Drive Type,1571,1541;",
 	"P2oPQ,Enable Drive #8,If Mounted,Always,Never;",
 	"P2oNO,Enable Drive #9,If Mounted,Always,Never;",
 	"P2oC,Parallel port,Enabled,Disabled;",
@@ -266,35 +258,15 @@ localparam CONF_STR = {
 	"P2oA,Pause When OSD is Open,No,Yes;",
 	"P2o7,Tape Autoplay,Yes,No;",
 	"P2-;",
-	"P2FC8,ROMBIN,Syst. ROM1/4 C64+Kernal+Char;",
-	"P2FC9,ROMBIN,Syst. ROM2/3 C128 Basic     ;",
-	"P2FCA,ROMBIN,Function ROM                ;",
-	"P2OE,ROM set,128DCR,Standard;",
+	"P2FC8,ROM,Syst. ROM1/4 C64+Kernal+Char;",
+	"P2FC9,ROM,Syst. ROM2/3 C128 Basic     ;",
+	"P2FCA,ROM,Function ROM                ;",
+	"P2FCB,ROM,Drive ROM                   ;",
 	"P2-;",
 	"P2FC5,CRT,Boot Cartridge              ;",
 	"P2-;",
-	"P2FCC,ROMBIN,1541 Alternate Drive ROM    ;",
-	"P2FCD,ROMBIN,1571 Alternate Drive ROM    ;",
-	"P2FCE,ROMBIN,1581 Alternate Drive ROM    ;",
-	"P2-;",
-	"P2O[102],1541 ROM,Stock,Alternate;"
-	"P2O[103],1571 ROM,Stock,Alternate;"
-	"P2O[104],1581 ROM,Stock,Alternate;"
-	"P2-;",
+	"P2OE,ROM set,128DCR,Standard;",
 	"P2OF,Char switch,C64 mode,Caps Lk key;",
-	
-	// Please don't remove?
-	"P3,Debug;",
-	"P3-,Experimental Use at own risk;",
-	"P3-,+ May work * Likely to crash;",
-	"P3-,- Not implemented yet       ;",
-	"P3-;",
-	"P3O[105],+8MB RAM,No,Yes;",
-	"P3O[99],-VDC regs at $D680,No,Yes;",
-
-	"P3O[101:100],-VDC RAM exposed at bank 127,No,Yes;",
-	"P3O[108],-RAM @ D200-D3FF,No,Yes;",
-	"P3O[107:106],*Turbo Switch,2mhz,4mhz,8mhz,- 20mhz;",
 	"-;",
 	"O3,Swap Joysticks,No,Yes;",
 	"-;",
@@ -404,9 +376,7 @@ always @(posedge clk_sys) begin
 	old_download <= ioctl_download;
 
 	if (RESET | status[0] | status[17] | buttons[1] | !pll_locked) begin
-		if(RESET) begin
-		  do_erase <= 1;
-		end
+		if(RESET) do_erase <= 1;
 		reset_counter <= 100000;
 	end
 	else if(~old_download & ioctl_download & load_prg & ~status[50]) begin
@@ -433,9 +403,7 @@ end
 wire [15:0] joyA,joyB,joyC,joyD;
 wire [15:0] joy = joyA | joyB | joyC | joyD;
 
-// wire [63:0] status;
-// We need more ...
-wire [127:0] status;
+wire [63:0] status;
 wire        forced_scandoubler;
 
 wire        ioctl_wr;
@@ -453,7 +421,7 @@ wire [13:0] sd_buff_addr;
 wire  [7:0] sd_buff_dout;
 wire  [7:0] sd_buff_din[2];
 wire        sd_buff_wr;
-wire  [2:0] img_mounted;
+wire  [1:0] img_mounted;
 wire [31:0] img_size;
 wire        img_readonly;
 
@@ -474,7 +442,7 @@ wire  [7:0] pd1,pd2,pd3,pd4;
 
 wire [64:0] RTC;
 
-hps_io #(.CONF_STR(CONF_STR), .VDNUM(3), .BLKSZ(1)) hps_io
+hps_io #(.CONF_STR(CONF_STR), .VDNUM(2), .BLKSZ(1)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
@@ -976,7 +944,7 @@ sdram sdram
 );
 
 wire  [7:0] c128_data_out;
-wire [23:0] c128_addr;
+wire [17:0] c128_addr;
 wire        c64_pause;
 wire        refresh;
 wire        ram_ce;
@@ -991,7 +959,7 @@ wire        romL;
 wire        romH;
 wire        UMAXromH;
 
-wire [23:0] audio_l,audio_r;
+wire [17:0] audio_l,audio_r;
 
 wire        ntsc = status[2];
 
@@ -1012,17 +980,15 @@ fpga64_sid_iec fpga64
 	.cpslk_mode(status[15]),
 
 	.sys256k(status[49]),
-	.sys16mb(status[105]),
 	.vdcVersion({(~status[47])^status[46],status[46]}),
 	.vdc64k(status[48]|~(status[47]|status[46])),
 	.vdcInitRam(~status[24]),
-	.osmode(status[97]),               // for testing, "0" C128, "1" C64
+	//.osmode(status[63]), // for testing, "0" C128, "1" C64
 	//.cpumode(status[62]|status[63]), // for testing, "0" Z80, "1" 8502
-	//.osmode(0),
-	.d4080_bootstatus(status[96]),
-	.cpumode(0|status[97]),
+	.osmode(0),
+	.cpumode(0),
 	.turbo_mode(2'b01),
-	.turbo_speed(status[107:106]),
+	.turbo_speed(2'b00),
 
 	.ps2_key(key),
 	.kbd_reset((~reset_n & ~status[1]) | reset_keys),
@@ -1098,7 +1064,7 @@ fpga64_sid_iec fpga64
 	.sid_ld_addr(sid_ld_addr),
 	.sid_ld_data(sid_ld_data),
 	.sid_ld_wr(sid_ld_wr),
-	.sid_mode(status[22:20]),
+	.sid_mode(status[21:20]),
 	.sid_filter(2'b11),
 	.sid_ver({~status[16],~status[13]}),
 	.sid_cfg({status[38:37],status[35:34]}),
@@ -1136,6 +1102,7 @@ fpga64_sid_iec fpga64
 	.cass_motor(cass_motor),
 	.cass_sense(~tape_adc_act & (use_tape ? cass_sense : cass_rtc)),
 	.cass_read(tape_adc_act ? ~tape_adc : cass_read),
+
 	.c128_n(c128_n),
 	.z80_n(z80_n)
 );
@@ -1160,12 +1127,10 @@ wire       c128_n;
 wire       z80_n;
 
 wire       c64_iec_clk;
-wire       c128_iec_fclk = 1'b0; // Not connect to anything yet.
 wire       c64_iec_data;
 wire       c64_iec_atn;
 
 wire       drive_iec_clk  = drive_iec_clk_o  & ext_iec_clk;
-wire       drive_iec_fclk  = drive_iec_fclk_o  & ext_iec_fclk;
 wire       drive_iec_data = drive_iec_data_o & ext_iec_data;
 
 wire [7:0] drive_par_i;
@@ -1173,13 +1138,12 @@ wire       drive_stb_i;
 wire [7:0] drive_par_o;
 wire       drive_stb_o;
 wire       drive_iec_clk_o;
-wire       drive_iec_fclk_o;
 wire       drive_iec_data_o;
 wire       drive_reset = ~reset_n | status[6] | (load_c15xx & ioctl_download);
 
 wire [1:0] drive_led;
 
-reg [2:0] drive_mounted = 0;
+reg [1:0] drive_mounted = 0;
 always @(posedge clk_sys) begin
 	if(img_mounted[0]) drive_mounted[0] <= |img_size;
 	if(img_mounted[1]) drive_mounted[1] <= |img_size;
@@ -1196,20 +1160,16 @@ iec_drive iec_drive
 	.iec_atn_i(c64_iec_atn),
 	.iec_data_i(c64_iec_data & ext_iec_data),
 	.iec_clk_i(c64_iec_clk & ext_iec_clk),
-	.iec_fclk_i(c128_iec_fclk & ext_iec_fclk),
 	.iec_data_o(drive_iec_data_o),
 	.iec_clk_o(drive_iec_clk_o),
-	.iec_fclk_o(drive_iec_fclk_o),
 
 	.pause(c64_pause),
 
 	.img_mounted(img_mounted),
 	.img_size(img_size),
 	.img_readonly(img_readonly),
-	.img_type(ioctl_index[7:6]),
-	.img_mfm(1'b0),
-	.img_dblside(ioctl_index[7:6] == 2'b01),
-  .use_1571(~status[95]),
+	.img_type(&ioctl_index[7:6] ? 2'b11 : 2'b01),
+
 	.led(drive_led),
 
 	.par_data_i(drive_par_i),
@@ -1229,11 +1189,10 @@ iec_drive iec_drive
 	.sd_buff_din(sd_buff_din),
 	.sd_buff_wr(sd_buff_wr),
 
-	.rom_index(ioctl_index),
 	.rom_addr(ioctl_addr),
 	.rom_data(ioctl_data),
 	.rom_wr(load_c15xx && ioctl_download && ioctl_wr),
-	.rom_sel(status[104:102])
+	.rom_std(status[14])
 );
 
 reg drive_ce;
@@ -1255,18 +1214,16 @@ wire disk_parport = ~status[44];
 
 reg disk_access;
 always @(posedge clk_sys) begin
-	reg c128_iec_fclk_old, c64_iec_clk_old, drive_iec_clk_old, drive_stb_i_old, drive_stb_o_old;
+	reg c64_iec_clk_old, drive_iec_clk_old, drive_stb_i_old, drive_stb_o_old;
 	integer to = 0;
 
 	c64_iec_clk_old <= c64_iec_clk;
-	c128_iec_fclk_old <= c128_iec_fclk;
 	drive_iec_clk_old <= drive_iec_clk;
 	drive_stb_i_old <= drive_stb_i;
 	drive_stb_o_old <= drive_stb_o;
 
-	if(((c128_iec_fclk_old != c128_iec_fclk) || (c64_iec_clk_old != c64_iec_clk) || 
-	    (drive_iec_clk_old != drive_iec_clk)) || 
-			(disk_parport && ((drive_stb_i_old != drive_stb_i) || (drive_stb_o_old != drive_stb_o))))
+	if(((c64_iec_clk_old != c64_iec_clk) || (drive_iec_clk_old != drive_iec_clk)) ||
+		(disk_parport && ((drive_stb_i_old != drive_stb_i) || (drive_stb_o_old != drive_stb_o))))
 	begin
 		disk_access <= 1;
 		to <= 16000000; // 0.5s
@@ -1277,14 +1234,13 @@ end
 
 wire ext_iec_en   = status[25];
 wire ext_iec_clk  = USER_IN[2] | ~ext_iec_en;
-wire ext_iec_fclk = USER_IN[6] | ~ext_iec_en;
 wire ext_iec_data = USER_IN[4] | ~ext_iec_en;
 
 assign USER_OUT[2] = (c64_iec_clk & drive_iec_clk_o)  | ~ext_iec_en;
 assign USER_OUT[3] = (reset_n & ~status[6]) | ~ext_iec_en;
 assign USER_OUT[4] = (c64_iec_data & drive_iec_data_o) | ~ext_iec_en;
 assign USER_OUT[5] = c64_iec_atn | ~ext_iec_en;
-assign USER_OUT[6] = (c128_iec_fclk & drive_iec_fclk_o)  | ~ext_iec_en;
+assign USER_OUT[6] = '1;
 
 wire vicHblank, vicVblank;
 wire vicHsync_out, vicVsync_out;
@@ -1731,12 +1687,6 @@ osdinfo osdinfo
 
 	.info_req(info_req),
 	.info(info)
-);
-
-// Send 40/80 key saved status
-fpga64_keyboard fpga64_keyboard
-(
-  .d4080_bootstatus(status[96])
 );
 
 endmodule
