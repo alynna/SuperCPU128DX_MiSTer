@@ -32,6 +32,7 @@ library IEEE;
 use ieee.std_logic_1164.ALL;
 use ieee.numeric_std.ALL;
 
+
 -- -----------------------------------------------------------------------
 
 entity cpu_6510 is
@@ -40,7 +41,6 @@ entity cpu_6510 is
 		enable  : in  std_logic;
 		reset   : in  std_logic;
 		nmi_n   : in  std_logic;
-		nmi_ack : out std_logic;
 		irq_n   : in  std_logic;
 		rdy     : in  std_logic;
 		di      : in  unsigned(7 downto 0);
@@ -61,6 +61,7 @@ architecture rtl of cpu_6510 is
 	signal localA : std_logic_vector(23 downto 0);
 	signal localDi : std_logic_vector(7 downto 0);
 	signal localDo : std_logic_vector(7 downto 0);
+	signal db : std_logic_vector(7 downto 0);
 	signal localWe : std_logic;
 
 	signal currentIO : std_logic_vector(7 downto 0);
@@ -68,36 +69,67 @@ architecture rtl of cpu_6510 is
 	signal ioData : std_logic_vector(7 downto 0);
 	
 	signal accessIO : std_logic;
+
+	signal vpa : std_logic;
+	signal vda : std_logic;
+
+-- module FT832(corenum, rst, clk, clko, cyc, phi11, phi12, phi81, phi82, nmi, irq1, irq2, irq3, abort, e, mx, rdy, be, vpa, vda, mlb, vpb, rw, ad, db, err_i, rty_i);	
+
+component FT816 is
+ port(
+	rst : in std_logic;
+	clk : in std_logic;
+	--clko : out std_logic;
+	--cyc : buffer std_logic_vector(4 downto 0);
+	--phi11 : out std_logic;
+	--phi12 : out std_logic;
+	--phi81 : out std_logic;
+	--phi82 : out std_logic;
+	nmi : in std_logic;
+	irq1 : in std_logic;
+	abort : in std_logic;
+	--e : out std_logic;
+	--mx : out std_logic;
+	rdy : in std_logic;
+	--be : in std_logic;
+	vpa : out std_logic;
+	vda : out std_logic;
+	--mlb : out std_logic;
+	--vpb : out std_logic;
+	rw : out std_logic;
+	ad : out std_logic_vector(23 downto 0);
+	db : buffer std_logic_vector(7 downto 0)
+	--err_i: in std_logic;
+	--rty_i: in std_logic
+ );
+end component;
+
 begin
-
--- Begin CPU MUX
-	cpu8: work.T65
+	cpu: FT816
 	port map(
-		Mode    => "00",
-		Res_n   => not reset,
-		Enable  => enable,
-		Clk     => clk,
-		Rdy     => rdy,
-		Abort_n => '1',
-		IRQ_n   => irq_n,
-		NMI_n   => nmi_n,
-		SO_n    => '1',
-		R_W_n   => localWe,
-		A       => localA,
-		DI      => localDi,
-		DO      => localDo,
-		NMI_ack => nmi_ack
+    clk => clk,
+	 rst => reset,
+	 rdy => rdy,
+    nmi => not nmi_n,
+	 irq1 => not irq_n,
+	 abort => '0',
+	 db => db,
+    ad => localA,
+    rw => localWe,
+	 vpa => vpa,
+	 vda => vda
 	);
--- End CPU MUX
 
-	-- Altered for 65816 support.  65816 mode only sees IO ports at 000000-000001
-
-	accessIO <= '1' when (localA(15 downto 1) = X"000"&"000") else '0'; 
+	db <= std_logic_vector(di) when localWe = '1' else std_logic_vector(d);
+	localDo <= db when localWe = '0' else std_logic_vector(di);
+	
+	accessIO <= '1' when (localA(23 downto 16) = "00000000") and (localA(15 downto 1) = X"000"&"000") else '0'; 	
 	localDi  <= localDo when localWe = '0' else std_logic_vector(di) when accessIO = '0' else ioDir when localA(0) = '0' else currentIO;
+	
 
 	process(clk)
 	begin
-		if rising_edge(clk) then
+		if (rising_edge(clk) or reset='1') then
 			if accessIO = '1' then
 				if localWe = '0' and enable = '1' then
 					if localA(0) = '0' then
@@ -113,11 +145,11 @@ begin
 			if reset = '1' then
 				ioDir <= (others => '0');
 				ioData <= (others => '1');
-				currentIO <= (others => '1');				
+				currentIO <= (others => '1');
 			end if;
 		end if;
 	end process;
-
+	
 	-- Cunnect zee wires
 	addr <= unsigned(localA(15 downto 0));
 	page <= unsigned(localA(23 downto 16));

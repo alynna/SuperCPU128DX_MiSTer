@@ -60,7 +60,7 @@ end mmu8722;
 architecture rtl of mmu8722 is
 
   -- Define memsize for MMUv2 to be 2^n pages desired. 
-  -- "7" here is going to mean 128 pages.  For now.
+	-- "7" here is going to mean 128 pages.  For now.
   constant MEMSIZE : integer := 7;
 
 	subtype configReg is unsigned(7 downto 0);
@@ -170,14 +170,28 @@ begin
 	end process;
 
 -- -----------------------------------------------------------------------
--- Output
+-- BiDir I/O pins
 -- -----------------------------------------------------------------------
-	-- TODO is d4080 bidirectional too?
-	game <= gamei and reg_game;
+	game_io: process(gamei, reg_game)
+	begin
+		game <= gamei and reg_game;
+	end process;
+
+	exrom_io: process(exromi, reg_exrom)
+	begin
+		exrom <= exromi and reg_exrom;
+	end process;
+
+	fsdir_io: process(fsdiri, reg_fsdir)
+	begin
+		fsdir <= fsdiri and reg_fsdir;
+	end process;
+
+-- -----------------------------------------------------------------------
+-- Output signals
+-- -----------------------------------------------------------------------
 	gameo <= game;
-	exrom <= exromi and reg_exrom;
 	exromo <= exrom;
-	fsdir <= fsdiri and reg_fsdir;
 	fsdiro <= fsdir;
 	systemMask <= (MEMSIZE-1 downto 0 => '1', others => '0') when sys16mb = '1' else ("000000" & sys256k & "1");
 
@@ -248,7 +262,7 @@ begin
 				case addr(15 downto 14) is
 				when "11" => rombank <= reg_cr(5 downto 4);
 				when "10" => rombank <= reg_cr(3 downto 2);
-				when "01" => rombank <= reg_cr(1) & reg_cr(1);
+				when "01" => rombank <= '0' & reg_cr(1);
 				when "00" => rombank <= bank(1 downto 0);
 				end case;
 				iosel <= reg_cr(0);

@@ -50,7 +50,6 @@ port(
 	reset_n     : in  std_logic;
 	dcr         : in  std_logic;
 	cpslk_mode  : in  std_logic;
-
 	pause       : in  std_logic := '0';
 	pause_out   : out std_logic;
 
@@ -61,10 +60,10 @@ port(
 	cpslk_sense : out std_logic;
 	d4080_sense : out std_logic;
 	noscr_sense : out std_logic;
-    d4080_bootstatus : in std_logic;
+	d4080_bootstatus : in std_logic;
 	
 	-- external memory
-	ramAddr     : out unsigned(23 downto 0);
+	ramAddr     : out unsigned(23	downto 0);
 	ramDin      : in  unsigned(7 downto 0);
 	ramDout     : out unsigned(7 downto 0);
 	ramCE       : out std_logic;
@@ -137,7 +136,7 @@ port(
 	audio_r     : out std_logic_vector(17 downto 0);
 	sid_filter  : in  std_logic_vector(1 downto 0);
 	sid_ver     : in  std_logic_vector(1 downto 0);
-	sid_mode    : in  unsigned(1 downto 0);
+	sid_mode    : in  unsigned(2 downto 0);
 	sid_cfg     : in  std_logic_vector(3 downto 0);
 	sid_ld_clk  : in  std_logic;
 	sid_ld_addr : in  std_logic_vector(11 downto 0);
@@ -165,8 +164,6 @@ port(
 	iec_data_i	: in  std_logic;
 	iec_clk_o	: out std_logic;
 	iec_clk_i	: in  std_logic;
-   iec_srq_n_o : out std_logic;
-   iec_srq_n_i : in  std_logic;
 	iec_atn_o	: out std_logic;
 
 	rom_addr    : in  std_logic_vector(15 downto 0);
@@ -187,15 +184,14 @@ port(
 
 	-- System memory size
 	sys256k     : in  std_logic;
-	sys16mb      : in  std_logic;
+	sys16mb     : in  std_logic;
 	-- System mode
 	c128_n      : out std_logic;
 	z80_n       : out std_logic;
-	
+	x816		: in  std_logic;
 	--test
 	osmode      : in  std_logic;
 	cpumode     : in  std_logic
-
 );
 end fpga64_sid_iec;
 
@@ -228,10 +224,7 @@ signal baLoc        : std_logic;
 signal ba_dma       : std_logic;
 signal aec          : std_logic;
 
-signal cpuactT65    : std_logic;
-signal cpuactT80    : std_logic;
-signal cpucycT65    : std_logic;
-signal cpucycT80    : std_logic;
+signal enableCpu    : std_logic;
 signal enableVic    : std_logic;
 signal enableVdc    : std_logic;
 signal enablePixel0 : std_logic;
@@ -245,7 +238,6 @@ signal irq_cia2     : std_logic;
 signal irq_vic      : std_logic;
 
 signal systemWe     : std_logic;
-signal pulseWr      : std_logic;
 signal pulseWr_io   : std_logic;
 signal systemAddr   : unsigned(23 downto 0);
 
@@ -268,14 +260,13 @@ signal cpuAddr_nd   : unsigned(15 downto 0);
 signal cpuAddr_T65  : unsigned(15 downto 0);
 signal cpuAddr_T80  : unsigned(15 downto 0);
 signal cpuDi        : unsigned(7 downto 0);
-signal cpuDi_T80    : unsigned(7 downto 0);
 signal cpuDo        : unsigned(7 downto 0);
 signal cpuDo_nd     : unsigned(7 downto 0);
 signal cpuDo_T65    : unsigned(7 downto 0);
 signal cpuDo_T80    : unsigned(7 downto 0);
 signal cpuPO        : unsigned(7 downto 0);
 signal cpuIO_T80    : std_logic;
-signal cpuM1_T80    : std_logic;
+signal cpuM1n_T80   : std_logic;
 signal cpuIrq_n     : std_logic;
 signal cpuBusAk_T80_n: std_logic;
 signal io_data_i    : unsigned(7 downto 0);
@@ -283,9 +274,8 @@ signal ioe_i        : std_logic;
 signal iof_i        : std_logic;
 
 signal io_enable    : std_logic;
-signal safe_cs      : std_logic;
-signal t65_cyc      : std_logic;
-signal t65_cyc_s    : std_logic_vector(1 downto 0);
+signal cpu_cyc      : std_logic;
+signal cpu_cyc_s    : std_logic_vector(1 downto 0);
 signal turbo_m      : std_logic_vector(2 downto 0);
 
 signal reset        : std_logic := '1';
@@ -299,11 +289,6 @@ signal cia1_pai     : unsigned(7 downto 0);
 signal cia1_pao     : unsigned(7 downto 0);
 signal cia1_pbi     : unsigned(7 downto 0);
 signal cia1_pbo     : unsigned(7 downto 0);
-signal cia1_sp_i    : std_logic;
-signal cia1_sp_o    : std_logic;
-signal cia1_cnt_i   : std_logic;
-signal cia1_cnt_o   : std_logic;
-signal cia1_flag_n  : std_logic;
 signal cia2_pai     : unsigned(7 downto 0);
 signal cia2_pao     : unsigned(7 downto 0);
 signal cia2_pbi     : unsigned(7 downto 0);
@@ -311,11 +296,6 @@ signal cia2_pbo     : unsigned(7 downto 0);
 signal cia2_pbe     : unsigned(7 downto 0);
 
 signal todclk       : std_logic;
-
--- IEC Fast Serial
-signal fclk_o       : std_logic;
-signal fs_i         : std_logic;
-signal fs_o         : std_logic;
 
 -- VIC signals
 signal vicColorIndex: unsigned(3 downto 0);
@@ -346,7 +326,6 @@ signal pot_x2       : std_logic_vector(7 downto 0);
 signal pot_y2       : std_logic_vector(7 downto 0);
 
 -- MMU signals
-signal mmu_we       : std_logic;
 signal mmu_do       : unsigned(7 downto 0);
 signal tAddr        : unsigned(15 downto 0);
 signal cpuBank      : unsigned(7 downto 0);
@@ -358,7 +337,6 @@ signal mmu_c128_n   : std_logic;
 signal mmu_z80_n    : std_logic;
 signal mmu_rombank  : unsigned(1 downto 0);
 signal mmu_iosel    : std_logic;
-signal fsdir_n      : std_logic;
 
 -- Keyboard signals
 signal cpslk_sense_kb  : std_logic;
@@ -396,10 +374,10 @@ component sid_top
   );
 end component;
 
-component mos6526_8520
+component mos6526
 	PORT (
 		clk           : in  std_logic;
-      mode          : in  unsigned(1 downto 0) := "00"; -- 0 - 6526, 1 - 8521, 2 - 8520
+		mode          : in  std_logic := '0'; -- 0 - 6526 "old", 1 - 8521 "new"
 		phi2_p        : in  std_logic;
 		phi2_n        : in  std_logic;
 		res_n         : in  std_logic;
@@ -503,21 +481,11 @@ end process;
 
 -- PHI0/2-clock emulation
 process(clk32)
-variable ba_cnt : integer range 0 to 4 := 0;
 begin
 	if rising_edge(clk32) then
 		if sysCycle = sysCycleDef'pred(CYCLE_CPU0) then
 			phi0_cpu <= '1';
-         if baLoc = '1' then
-            ba_cnt := 0;
-         elsif ba_cnt < 4 then
-            ba_cnt := ba_cnt + 1;
-         end if;
-         if baLoc = '1' or
-               (cpuactT65 = '1' and cpuWe = '1' and dma_active = '0') or
-               (cpuactT80 = '1' and ba_cnt < 4 and dma_active = '0') or
-               (ba_dma = '1' and dma_active = '1')
-         then
+			if baLoc = '1' or cpuBusAk_T80_n = '1' or (cpuWe = '1' and dma_active = '0') or (ba_dma = '1' and dma_active = '1') then
 				cpuHasBus <= '1';
 			end if;
 		end if;
@@ -542,9 +510,9 @@ begin
 			enableVic <= '1';
 		when CYCLE_CPUE =>
 			enableVic <= '1';
-         enableVdc <= '1';
 		when CYCLE_CPUC =>
 			enableCia_n <= '1';
+			enableVdc <= '1';
 		when CYCLE_CPUF =>
 			enableCia_p <= '1';
 			enableSid <= '1';
@@ -564,7 +532,7 @@ generic map (
 )
 port map (
 	clk => clk32,
-	we => cs_color and pulseWr,
+	we => cs_color and pulseWr_io,
 	addr => colorA10 & systemAddr(9 downto 0),
 	data => cpuDo(3 downto 0),
 	q => colorData
@@ -582,11 +550,11 @@ port map (
 	cs_lr => cs_mmuH,
 
 	sys256k => sys256k, -- "1" for 256K system memory
-	sys16mb => sys16mb, --   "1" for 16MB system memory
-	osmode => osmode,  -- debug
-	cpumode => cpumode,  -- debug
+	sys16mb => sys16mb, -- "1" for 16MB system memory
+	osmode => osmode,   -- debug
+	cpumode => cpumode, -- debug
 
-	we => mmu_we,
+	we => pulseWr_io,
 
 	addr => cpuAddr,
 	di => cpuDo,
@@ -605,16 +573,13 @@ port map (
 	gameo => mmu_game,
 
 	fsdiri => '1',
-   fsdiro => fsdir_n,
 
 	c128_n => mmu_c128_n,
 	z80_n => mmu_z80_n,
 
-   rombank => mmu_rombank,
-   iosel => mmu_iosel
+	rombank => mmu_rombank,
+	iosel => mmu_iosel
 );
-
-mmu_we <= pulseWr when cs_mmuH = '1' else pulseWr_io;
 
 -- -----------------------------------------------------------------------
 -- PLA and bus-switches
@@ -633,9 +598,9 @@ port map (
 	c128_n => mmu_c128_n,
 	z80_n => mmu_z80_n,
 	z80io => cpuIO_T80,
-   z80m1 => cpuM1_T80,
-   mmu_rombank => mmu_rombank,
-   mmu_iosel => mmu_iosel,
+	z80m1n => cpuM1n_T80,
+	mmu_rombank => mmu_rombank,
+	mmu_iosel => mmu_iosel,
 	tAddr => tAddr,
 	cpuBank => cpuBank,
 	vicBank => vicBank,
@@ -697,19 +662,14 @@ IOF <= iof_i;
 
 process(clk32)
 begin
-   if rising_edge(clk32) then
-      pulseWr <= '0';
-      pulseWr_io <= '0';
-      if cpuWe = '1' then
-         if cpuactT65 = '1' and t65_cyc = '1' then
-            pulseWr <= '1';
-         end if;
-         if sysCycle = CYCLE_CPUC then
-            pulseWr <= '1';
-            pulseWr_io <= '1';
-         end if;
-      end if;
-   end if;
+	if rising_edge(clk32) then
+		pulseWr_io <= '0';
+		if cpuWe = '1' then
+			if sysCycle = CYCLE_CPUC then
+				pulseWr_io <= '1';
+			end if;
+		end if;
+	end if;
 end process;
 
 -- -----------------------------------------------------------------------
@@ -761,7 +721,7 @@ port map (
 	mode8566 => (not ntscMode),
 	mode8569 => '0',
 
-   turbo_en => turbo_en,
+	turbo_en => '1',
 	turbo_state => turbo_state,
 
 	cs => cs_vic,
@@ -803,15 +763,24 @@ begin
 end process;
 
 -- VIC bank to address lines
--- (C128 does not have glitch that C64C has)
+--
+-- The glue logic on a C64C will generate a glitch during 10 <-> 01
+-- generating 00 (in other words, bank 3) for one cycle.
+--
+-- When using the data direction register to change a single bit 0->1
+-- (in other words, decreasing the video bank number by 1 or 2),
+-- the bank change is delayed by one cycle. This effect is unstable.
 process(clk32)
 begin
 	if rising_edge(clk32) then
 		if phi0_cpu = '0' and enableVic = '1' then
-         vicAddr(15 downto 14) <= not cia2_pao(1 downto 0);
+			vicAddr1514 <= not cia2_pao(1 downto 0);
 		end if;
 	end if;
 end process;
+
+-- emulate only the first glitch (enough for Undead from Emulamer)
+vicAddr(15 downto 14) <= "11" when ((vicAddr1514 xor not cia2_pao(1 downto 0)) = "11") and (cia2_pao(0) /= cia2_pao(1)) else not unsigned(cia2_pao(1 downto 0));
 
 -- Pixel timing
 process(clk32)
@@ -858,7 +827,7 @@ port map (
 
 	enableBus => enableVdc,
 	cs => cs_vdc,
-	we => cpuWe,
+	we => pulseWr_io,
 	lp_n => cia1_pbi(4),
 
 	rs => tAddr(0),
@@ -887,10 +856,10 @@ port map (
 -- SID
 -- -----------------------------------------------------------------------
 
---	Right SID Port: Same,D420,DE00,DF00
+--	Right SID Port: Same,DE00,D420,D500,DF00
 
-sid_sel_l <= cs_sid when sid_mode /= 1 else (cs_sid and not tAddr(5));
-sid_sel_r <= cs_sid when sid_mode = 0 else ioe_i when sid_mode = 2 else iof_i when sid_mode = 3 else (cs_sid and tAddr(5));
+sid_sel_l <= cs_sid when sid_mode(2 downto 1) /= 1 else (cs_sid and ((not sid_mode(0) and not tAddr(5)) or (sid_mode(0) and not tAddr(8))));
+sid_sel_r <= sid_sel_l when sid_mode = 0 else ioe_i when sid_mode = 1 else iof_i when sid_mode = 4 else (cs_sid and not sid_sel_l);
 io_data_i <= io_data when io_ext = '1' else sid_do when sid_sel_r = '1' else (others => '1');
 
 pot_x1 <= (others => '1' ) when cia1_pao(6) = '0' else not pot1;
@@ -927,10 +896,10 @@ port map (
 -- -----------------------------------------------------------------------
 -- CIAs
 -- -----------------------------------------------------------------------
-cia1: mos6526_8520
+cia1: mos6526
 port map (
-   clk => clk32,
-   mode => '0' & cia_mode,
+	clk => clk32,
+	mode => cia_mode,
 	phi2_p => enableCia_p,
 	phi2_n => enableCia_n,
 	res_n => not reset,
@@ -946,21 +915,21 @@ port map (
 	pb_in => cia1_pbi,
 	pb_out => cia1_pbo,
 
-   flag_n => cia1_flag_n,
-   sp_in => cia1_sp_i,
-   sp_out => cia1_sp_o,
-   cnt_in => cia1_cnt_i,
-   cnt_out => cia1_cnt_o,
+	flag_n => cass_read,
+	sp_in => sp1_i,
+	sp_out => sp1_o,
+	cnt_in => cnt1_i,
+	cnt_out => cnt1_o,
 
 	tod => todclk,
 
 	irq_n => irq_cia1
 );
 
-cia2: mos6526_8520
+cia2: mos6526
 port map (
-   clk => clk32,
-   mode => '0' & cia_mode,
+	clk => clk32,
+	mode => cia_mode,
 	phi2_p => enableCia_p,
 	phi2_n => enableCia_n,
 	res_n => not reset,
@@ -1002,20 +971,9 @@ end process;
 
 cia2_pai(5 downto 0) <= "111" & pa2_i & "11";
 
-fs_o        <= fsdir_n;
-fclk_o      <= cia1_cnt_o or not fs_o;
-iec_data_o  <= not cia2_pao(5) and (cia1_sp_o or not fs_o);
-iec_clk_o   <= not cia2_pao(4);
-iec_atn_o   <= not cia2_pao(3);
-iec_srq_n_o <= fclk_o;
-
-fs_i        <= not (fsdir_n or mmu_c128_n);
-cia1_flag_n <= iec_srq_n_i and fclk_o and cass_read;
-cia1_cnt_i  <= (iec_srq_n_i or not fs_i) and cnt1_i;
-cia1_sp_i   <= (iec_data_i  or not fs_i) and sp1_i;
-
-cnt1_o <= cia1_cnt_o and cia1_cnt_i;
-sp1_o  <= cia1_sp_o  and cia1_sp_i;
+iec_data_o <= not cia2_pao(5);
+iec_clk_o  <= not cia2_pao(4);
+iec_atn_o  <= not cia2_pao(3);
 
 pb_o  <= cia2_pbo;
 pa2_o <= cia2_pao(2);
@@ -1052,17 +1010,14 @@ cpu_6510: entity work.cpu_6510
 port map (
 	clk => clk32,
 	reset => reset,
-   enable => cpuactT65 and cpucycT65 and not dma_active,
-   nmi_n => irq_cia2 and nmi_n,
-   nmi_ack => nmi_ack,
-   irq_n => cpuIrq_n,
-   rdy => baLoc and not cpuactT80,
-
+	enable => enable8502 and enableCpu and not dma_active,
+	nmi_n => irq_cia2 and nmi_n,
+	irq_n => cpuIrq_n,
+	rdy => baLoc and not enableZ80,
 	di => cpuDi,
 	addr => cpuAddr_T65,
 	do => cpuDo_T65,
 	we => cpuWe_T65,
-
 	diIO => cpuPO(7) & cpslk_sense_kb & cpuPO(5) & cass_sense & cpuPO(3) & "111",
 	doIO => cpuPO
 );
@@ -1073,91 +1028,70 @@ cass_write <= cpuPO(3);
 
 cpu_z80: entity work.cpu_z80
 port map (
-   clk => clk32,
-   reset => reset,
-   enable => cpucycT80 and not dma_active,
-   busrq_n => baLoc and cpuactT80,
-   busak_n => cpuBusAk_T80_n,
-   irq_n => cpuIrq_n,
+	clk => clk32,
+	reset => reset,
+	enable => enableCpu and not dma_active,
+	busrq_n => baLoc and enableZ80,
+	busak_n => cpuBusAk_T80_n,
+	irq_n => cpuIrq_n,
 
-   di => cpuDi_T80,
-   addr => cpuAddr_T80,
-   do => cpuDo_T80,
-   rd => cpuRd_T80,
-   we => cpuWe_T80,
-   io => cpuIO_T80,
-   m1 => cpuM1_T80
+	di => cpuDi,
+	addr => cpuAddr_T80,
+	do => cpuDo_T80,
+	we => cpuWe_T80,
+	io => cpuIO_T80,
+	m1_n => cpuM1n_T80
 );
-
-process(clk32)
-variable We : std_logic;
-begin
-   if rising_edge(clk32) then
-      if sysCycle = sysCycleDef'high then
-         if cpuRd_T80 = '1' then
-            cpuDi_T80 <= cpuDi;
-         end if;
-      end if;
-   end if;
-end process;
 
 ramDout <= cpuDo;
 ramAddr <= systemAddr;
 ramWE   <= systemWe when sysCycle >= CYCLE_CPU0 else '0';
-ramCE   <= cs_ram when
-           sysCycle = CYCLE_VIC0 or
-           (cpuactT65 = '1' and t65_cyc = '1') or
-           (cpuactT65 = '0' and sysCycle = CYCLE_CPUC) else '0';
-safe_cs <= cs_ram or cs_color or cs_mmuH;  -- safe to access in 8502 turbo mode
-t65_cyc <= '1' when
-            (sysCycle = CYCLE_CPU0 and turbo_m(0) = '1' and safe_cs = '1' ) or
-            (sysCycle = CYCLE_CPU4 and turbo_m(1) = '1' and safe_cs = '1' ) or
-            (sysCycle = CYCLE_CPU8 and turbo_m(2) = '1' and safe_cs = '1' ) or
-            (sysCycle = CYCLE_CPUC and (io_enable = '1'  or safe_cs = '1')) else '0';
-cpucycT80 <= '1' when sysCycle = CYCLE_CPU0 else '0';
+ramCE   <= cs_ram when sysCycle = CYCLE_VIC0 or cpu_cyc = '1' else '0';
+cpu_cyc <= '1' when
+				(sysCycle = CYCLE_CPU0 and turbo_m(0) = '1' and cs_ram = '1' ) or
+				(sysCycle = CYCLE_CPU4 and turbo_m(1) = '1' and cs_ram = '1' ) or
+				(sysCycle = CYCLE_CPU8 and turbo_m(2) = '1' and cs_ram = '1' ) or
+				(sysCycle = CYCLE_CPUC and (io_enable = '1'  or cs_ram = '1')) else '0';
 
 process(clk32)
 begin
-   if rising_edge(clk32) then
-      t65_cyc_s <= t65_cyc_s(0) & t65_cyc;
-      cpucycT65 <= t65_cyc_s(1);
+	if rising_edge(clk32) then
+		cpu_cyc_s <= cpu_cyc_s(0) & cpu_cyc;
+		enableCpu <= cpu_cyc_s(1);
+		io_enable <= io_enable and not enableCpu;
 
-      -- IO enable
-      if cpuactT65 = '1' then
-         io_enable <= io_enable and not cpucycT65;
-      end if;
-      if sysCycle = CYCLE_EXT0 then
-         io_enable <= '1';
-      end if;
+		if sysCycle = CYCLE_EXT0 then
+			io_enable <= '1';
+		end if;
 
-      -- CPU selection
-      if (sysCycle = sysCycleDef'pred(CYCLE_CPU0)) then
-         cpuactT65 <= mmu_z80_n and not cpuBusAk_T80_n;
-         cpuactT80 <= not mmu_z80_n;
-      end if;
+		-- CPU enable
+		if (sysCycle = sysCycleDef'pred(CYCLE_CPU0)) then
+			enableZ80 <= not mmu_z80_n;
+			enable8502 <= mmu_z80_n and not cpuBusAk_T80_n;
+		end if; 
 
-      -- 2 points to register DMA request before CPU cycles.
-      if sysCycle = CYCLE_EXT1 or sysCycle = CYCLE_EXT5 then
-         dma_active <= dma_req;
-         turbo_en <= turbo_mode(0);
-         turbo_m <= "000";
-         if dma_req = '0' then
-            if ((turbo_mode(0) and turbo_state) = '1' or turbo_mode(1) = '1') then
-               case turbo_speed is
-                  when "00" => turbo_m <= "010";
-                  when "01" => turbo_m <= "110";
-                  when "10" => turbo_m <= "111";
-                  when "11" => turbo_m <= "111"; -- unused
-               end case;
-            end if;
-         end if;
-      end if;
-   end if;
+		-- 2 points to register DMA request before CPU cycles.
+		if sysCycle = CYCLE_EXT1 or sysCycle = CYCLE_EXT5 then
+			dma_active <= dma_req;
+			turbo_en <= turbo_mode(0);
+			turbo_m <= "000";
+			if dma_req = '0' and cpuIO_T80 = '0' then
+				if ((turbo_mode(0) and turbo_state) = '1' or turbo_mode(1) = '1' or enableZ80 = '1') then
+					case turbo_speed is
+						when "00" => turbo_m <= "010";
+						when "01" => turbo_m <= "110";
+						when "10" => turbo_m <= "111";
+						when "11" => turbo_m <= "111"; -- unused
+					end case;
+				end if;
+			end if;
+		end if;
+	end if;
 end process;
 
-cpuAddr_nd <= cpuAddr_T65 when cpuactT65 = '1' else cpuAddr_T80;
-cpuDo_nd   <= cpuDo_T65   when cpuactT65 = '1' else cpuDo_T80;
-cpuWe_nd   <= cpuWe_T65   when cpuactT65 = '1' else cpuWe_T80;
+cpuAddr_nd <= cpuAddr_T65 when enable8502 = '1' else cpuAddr_T80;
+cpuDo_nd   <= cpuDo_T65   when enable8502 = '1' else cpuDo_T80;
+cpuWe_nd   <= cpuWe_T65   when enable8502 = '1' else cpuWe_T80;
 
 cpuAddr <= cpuAddr_nd when dma_active = '0' else dma_addr;
 cpuDo   <= cpuDo_nd   when dma_active = '0' else dma_dout;
@@ -1186,7 +1120,6 @@ port map (
 	reset => kbd_reset,
 	ps2_key => ps2_key,
 	d4080_bootstatus => d4080_bootstatus,
-	
 	joyA => not unsigned(joyA(6 downto 0)),
 	joyB => not unsigned(joyB(6 downto 0)),
 	pai => cia1_pao,
