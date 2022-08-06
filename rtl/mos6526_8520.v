@@ -3,9 +3,12 @@
 // Timers & Interrupts are rewritten by slingshot
 // Passes all Lorenz CIA Timer tests
 // Passes all CIA tests from VICE, except dd0dtest
+//
+// 8520 version by Sorgelig
+// Shift register fixes, merge of 6526 and 8520, and addition of 5710 variant by Erik Scheffers
 
-module mos6526 (
-  input  wire       mode,   // 0 - 6526 "old", 1 - 8521 "new"
+module mos6526_8520 (
+  input  wire [1:0] mode,   // 0 - 6526, 1 - 8521, 2 - 8520, 3 - 5710 (untested)
   input  wire       clk,
   input  wire       phi2_p, // Phi 2 positive edge
   input  wire       phi2_n, // Phi 2 negative edge
@@ -50,11 +53,6 @@ reg [7:0] ta_hi;
 reg [7:0] tb_lo;
 reg [7:0] tb_hi;
 
-reg [3:0] tod_10ths;
-reg [6:0] tod_sec;
-reg [6:0] tod_min;
-reg [5:0] tod_hr;
-
 reg [7:0] sdr;
 reg [4:0] imr;
 reg [4:0] icr;
@@ -66,9 +64,14 @@ reg [7:0] crb;
 reg [15:0] timer_a;
 reg [15:0] timer_b;
 
+reg [23:0] tod_count;
+reg  [3:0] tod_10ths;
+reg  [6:0] tod_sec;
+reg  [6:0] tod_min;
+reg  [5:0] tod_hr;
+
 reg        tod_prev;
 reg        tod_run;
-reg [ 2:0] tod_count;
 reg        tod_tick;
 reg [23:0] tod_alarm;
 reg        tod_alarm_reg;
@@ -93,24 +96,32 @@ wire       wr = phi2_n & !cs_n & !rw;
 always @(posedge clk) begin
   if (!res_n) db_out <= 8'h00;
   else if (rd)
-    case (rs)
-      4'h0: db_out <= pa_in;
-      4'h1: db_out <= pb_in;
-      4'h2: db_out <= ddra;
-      4'h3: db_out <= ddrb;
-      4'h4: db_out <= timer_a[ 7:0];
-      4'h5: db_out <= timer_a[15:8];
-      4'h6: db_out <= timer_b[ 7:0];
-      4'h7: db_out <= timer_b[15:8];
-      4'h8: db_out <= {4'h0, tod_latch[3:0]};
-      4'h9: db_out <= {1'b0, tod_latch[10:4]};
-      4'ha: db_out <= {1'b0, tod_latch[17:11]};
-      4'hb: db_out <= {tod_latch[23], 2'h0, tod_latch[22:18]};
-      4'hc: db_out <= sdr;
-      4'hd: db_out <= {~irq_n, 2'b00, icr};
-      4'he: db_out <= {cra[7:5], 1'b0, cra[3:0]};
-      4'hf: db_out <= {crb[7:5], 1'b0, crb[3:0]};
-    endcase
+    if (~&mode) 
+      case (rs)
+        4'h0: db_out <= pa_in;
+        4'h1: db_out <= pb_in;
+        4'h2: db_out <= ddra;
+        4'h3: db_out <= ddrb;
+        4'h4: db_out <= timer_a[ 7:0];
+        4'h5: db_out <= timer_a[15:8];
+        4'h6: db_out <= timer_b[ 7:0];
+        4'h7: db_out <= timer_b[15:8];
+        4'h8: db_out <= mode[1] ? tod_latch[ 7: 0] : {4'h0, tod_latch[ 3: 0]};
+        4'h9: db_out <= mode[1] ? tod_latch[15: 8] : {1'b0, tod_latch[10: 4]};
+        4'ha: db_out <= mode[1] ? tod_latch[23:16] : {1'b0, tod_latch[17:11]};
+        4'hb: db_out <= mode[1] ? 8'h00            : {tod_latch[23], 2'h0, tod_latch[22:18]};
+        4'hc: db_out <= sdr;
+        4'hd: db_out <= {~irq_n, 2'b00, icr};
+        4'he: db_out <= {~mode[1] & cra[7], cra[6:5], 1'b0, cra[3:0]};
+        4'hf: db_out <= {crb[7:5], 1'b0, crb[3:0]};
+      endcase
+    else
+      case (rs)
+        4'hc: db_out <= sdr;
+        4'hd: db_out <= {4'b0000, icr[3], 3'b000};
+        4'he: db_out <= {1'b0, cra[6], 6'b000000};
+        default: db_out <= 8'h00;
+      endcase
 end
 
 assign pa_oe = ddra;
@@ -118,7 +129,7 @@ assign pb_oe = ddrb;
 
 // Port A Output
 always @(posedge clk) begin
-  if (!res_n) begin
+  if (!res_n || &mode) begin
     pra  <= 8'h00;
     ddra <= 8'h00;
   end
@@ -133,7 +144,7 @@ end
 
 // Port B Output
 always @(posedge clk) begin
-  if (!res_n) begin
+  if (!res_n || &mode) begin
     prb  <= 8'h00;
     ddrb <= 8'h00;
   end
@@ -152,33 +163,33 @@ end
 
 // FLAG Input
 always @(posedge clk) begin
-	reg old_flag, flag;
+  reg old_flag, flag;
 
-	old_flag <= flag_n;
-	if(old_flag & ~flag_n) flag <= 1'b1;
-  
-	if (!res_n) begin
-		icr[4] <= 1'b0;
-		flag <= 1'b0;
-	end
-	else begin
-		if (phi2_p) begin
-			if (int_reset) icr[4] <= 1'b0;
-			if ((old_flag & ~flag_n) | flag) begin
-				icr[4] <= 1'b1;
-				flag <= 1'b0;
-			end
-		end
-	end
+  old_flag <= flag_n;
+  if(old_flag & ~flag_n) flag <= 1'b1;
+
+  if (!res_n || &mode) begin
+      icr[4] <= 1'b0;
+      flag <= 1'b0;
+  end
+  else begin
+      if (phi2_p) begin
+        if (int_reset) icr[4] <= 1'b0;
+        if ((old_flag & ~flag_n) | flag) begin
+            icr[4] <= 1'b1;
+            flag <= 1'b0;
+        end
+      end
+  end
 end
 
 // Port Control Output
-reg pcr;
+reg pcr = 1'b1;
 always @(posedge clk) begin
-  if (!cs_n && rs == 4'h1) pcr <= 1'b0;
+  if (~&mode && !cs_n && rs == 4'h1) pcr <= 1'b0;
   if (phi2_p) begin
-	 pc_n <= pcr;
-	 pcr  <= 1'b1;
+    pc_n <= pcr;
+    pcr  <= 1'b1;
   end
 end
 
@@ -190,14 +201,20 @@ wire [15:0] newTimerAVal = countA3 ? (timer_a - 1'b1) : timer_a;
 wire timerAoverflow = !newTimerAVal & countA2;
 
 always @(posedge clk) begin
-
+  if (&mode) begin
+    ta_lo <= 8'h05;
+    ta_hi <= 8'h00;
+    cra   <= 8'h01;
+  end
   if (!res_n) begin
-    ta_lo          <= 8'hff;
-    ta_hi          <= 8'hff;
-    cra            <= 8'h00;
-    timer_a        <= 16'h0000;
-    timerAff       <= 1'b0;
-    icr[0]         <= 1'b0;
+    if (~&mode) begin
+      ta_lo <= 8'hff;
+      ta_hi <= 8'hff;
+      cra   <= 8'h00;
+    end;
+    timer_a  <= 16'h0000;
+    timerAff <= 1'b0;
+    icr[0]   <= 1'b0;
   end
   else begin
     if (phi2_p) begin
@@ -230,23 +247,30 @@ always @(posedge clk) begin
     if (wr)
       case (rs)
         4'h4:
-        begin
+          if (~&mode) begin
             ta_lo <= db_in;
             if (timerAoverflow) timer_a <= {ta_hi, db_in};
-        end
+          end
         4'h5:
-        begin
+          if (~&mode) begin
             ta_hi <= db_in;
-            if (~cra[0]) begin
+            if (~cra[0] | (mode[1] & cra[3])) begin
                 timer_a <= {db_in, ta_lo};
-                countA3 <= 0;
+                if (mode[1]) begin
+                  countA3 <= cra[3];
+                  cra[0] <= cra[3];
+                end
+                else
+                  countA3 <= 0;
             end
-        end
+          end
         4'he:
-        begin
-            cra   <= db_in;
+          if (~&mode) begin
+            cra <= db_in;
             timerAff <= timerAff | (db_in[0] & ~cra[0]);
-        end
+          end 
+          else 
+            cra <= {1'b0, db_in[6], 6'b000001};
         default: ;
       endcase;
   end
@@ -260,8 +284,7 @@ wire [15:0] newTimerBVal = countB3 ? (timer_b - 1'b1) : timer_b;
 wire timerBoverflow = !newTimerBVal & countB2;
 
 always @(posedge clk) begin
-
-  if (!res_n) begin
+  if (!res_n || &mode) begin
     tb_lo          <= 8'hff;
     tb_hi          <= 8'hff;
     crb            <= 8'h00;
@@ -296,7 +319,7 @@ always @(posedge clk) begin
         end
       end
       // Timer B bug - INT fired, but ICR not set
-      if (!mode & int_reset) icr[1] <= 0;
+      if (~|mode & int_reset) icr[1] <= 0;
 
       if (loadB1) begin
         timer_b <= {tb_hi, tb_lo};
@@ -314,9 +337,14 @@ always @(posedge clk) begin
         4'h7:
         begin
             tb_hi <= db_in;
-            if (~crb[0]) begin
+            if (~crb[0] | (mode[1] & crb[3])) begin
                 timer_b <= {db_in, tb_lo};
-                countB3 <= 0;
+                if (mode[1]) begin
+                  countB3 <= crb[3];
+                  crb[0] <= crb[3];
+                end
+                else
+                  countB3 <= 0;
             end
         end
         4'hf:
@@ -331,7 +359,7 @@ end
 
 // Time of Day
 always @(posedge clk) begin
-  if (!res_n) begin
+  if (!res_n || &mode) begin
     tod_10ths   <= 4'h0;
     tod_sec     <= 7'h00;
     tod_min     <= 7'h00;
@@ -339,93 +367,118 @@ always @(posedge clk) begin
     tod_run     <= 1'b0;
     tod_alarm   <= 24'h000000;
     tod_latch   <= 24'h000000;
+    tod_count   <= 24'h000000;
     tod_latched <= 1'b0;
     icr[2] <= 1'b0;
   end
-  else if (rd)
-    case (rs)
-      4'h8: tod_latched <= 1'b0;
-      4'hb: tod_latched <= 1'b1;
-      default: ;
-    endcase
-  else if (wr)
-    case (rs)
-      4'h8: if (crb[7]) tod_alarm[3:0] <= db_in[3:0];
-            else begin
-              tod_run   <= 1'b1;
-              tod_10ths <= db_in[3:0];
-            end
-      4'h9: if (crb[7]) tod_alarm[10:4] <= db_in[6:0];
-            else tod_sec <= db_in[6:0];
-      4'ha: if (crb[7]) tod_alarm[17:11] <= db_in[6:0];
-            else tod_min <= db_in[6:0];
-      4'hb: if (crb[7]) tod_alarm[23:18] <= {db_in[7], db_in[4:0]};
-            else begin
-              tod_run <= 1'b0;
-              if (db_in[4:0] == 5'h12) tod_hr <= {~db_in[7], db_in[4:0]};
-              else tod_hr <= {db_in[7], db_in[4:0]};
-            end
-      default: ;
-    endcase
-  tod_prev <= tod;
-  tod_tick <= 1'b0;
-  if (tod_run) begin
-    tod_count <= (tod && !tod_prev) ? tod_count + 1'b1 : tod_count;
-    if ((cra[7] && tod_count == 3'h5) || tod_count == 3'h6) begin
-      tod_tick  <= 1'b1;
-      tod_count <= 3'h0;
-    end
-    if (tod_tick) begin
-      tod_10ths <= (tod_10ths == 4'h9) ? 1'b0 : tod_10ths + 1'b1;
-      if (tod_10ths == 4'h9) begin
-        tod_sec[3:0] <= tod_sec[3:0] + 1'b1;
-        if (tod_sec[3:0] == 4'h9) begin
-          tod_sec[3:0] <= 4'h0;
-          tod_sec[6:4] <= tod_sec[6:4] + 1'b1;
-        end
-        if (tod_sec == 7'h59) begin
-          tod_sec[6:4] <= 3'h0;
-          tod_min[3:0] <= tod_min[3:0] + 1'b1;
-        end
-        if (tod_min[3:0] == 4'h9 && tod_sec == 7'h59) begin
-          tod_min[3:0] <= 4'h0;
-          tod_min[6:4] <= tod_min[6:4] + 1'b1;
-        end
-        if (tod_min == 7'h59 && tod_sec == 7'h59) begin
-          tod_min[6:4] <= 3'h0;
-          tod_hr[3:0]  <= tod_hr[3:0] + 1'b1;
-        end
-        if (tod_hr[3:0] == 4'h9 && tod_min == 7'h59 && tod_sec == 7'h59) begin
-          tod_hr[4]   <= 1'b1;
-          tod_hr[3:0] <= tod_hr[4] ? tod_hr[3:0] + 1'b1 : 4'h0;
-        end
-        if (tod_min == 7'h59 && tod_sec == 7'h59)
-          if (tod_hr[4:0] == 5'h11) tod_hr[5] <= ~tod_hr[5];
-          else if (tod_hr[4:0] == 5'h12) tod_hr[4:0] <= 5'h01;
-      end
-    end
-  end
-  else tod_count <= 3'h0;
+  else begin
+    if (rd)
+      case (rs)
+        4'h8: tod_latched <= 1'b0;
+        4'ha: if ( mode[1]) tod_latched <= 1'b1;
+        4'hb: if (!mode[1]) tod_latched <= 1'b1;
+        default: ;
+      endcase
+    else if (wr)
+      if (mode[1])
+        case (rs)
+          4'h8: if (crb[7]) tod_alarm[7:0] <= db_in;
+                else begin
+                  tod_run   <= 1'b1;
+                  tod_count[7:0] <= db_in;
+                end
+          4'h9: if (crb[7]) tod_alarm[15:8] <= db_in;
+                else tod_count[15:8] <= db_in;
+          4'ha: if (crb[7]) tod_alarm[23:16] <= db_in;
+                else begin
+                  tod_run <= 1'b0;
+                  tod_count[23:16] <= db_in;
+                end
+          default: ;
+        endcase
+      else
+        case (rs)
+          4'h8: if (crb[7]) tod_alarm[3:0] <= db_in[3:0];
+                else begin
+                  tod_run   <= 1'b1;
+                  tod_10ths <= db_in[3:0];
+                end
+          4'h9: if (crb[7]) tod_alarm[10:4] <= db_in[6:0];
+                else tod_sec <= db_in[6:0];
+          4'ha: if (crb[7]) tod_alarm[17:11] <= db_in[6:0];
+                else tod_min <= db_in[6:0];
+          4'hb: if (crb[7]) tod_alarm[23:18] <= {db_in[7], db_in[4:0]};
+                else begin
+                  tod_run <= 1'b0;
+                  if (db_in[4:0] == 5'h12) tod_hr <= {~db_in[7], db_in[4:0]};
+                  else tod_hr <= {db_in[7], db_in[4:0]};
+                end
+          default: ;
+        endcase
+    tod_prev <= tod;
 
-  if (phi2_p) begin
-    if (!tod_latched) tod_latch <= {tod_hr, tod_min, tod_sec, tod_10ths};
-    if ({tod_hr, tod_min, tod_sec, tod_10ths} == tod_alarm) begin
-      tod_alarm_reg <= 1'b1;
-      icr[2]   <= !tod_alarm_reg ? 1'b1 : icr[2];
+    if (tod_run && tod && !tod_prev) tod_count <= tod_count + 1'd1;
+
+    if (!mode[1]) begin
+      tod_tick <= 1'b0;
+      if (tod_run) begin
+        if ((cra[7] && tod_count[2:0] == 3'h5) || tod_count[2:0] == 3'h6) begin
+          tod_tick  <= 1'b1;
+          tod_count <= 24'h0;
+        end
+        if (tod_tick) begin
+          tod_10ths <= (tod_10ths == 4'h9) ? 1'b0 : tod_10ths + 1'b1;
+          if (tod_10ths == 4'h9) begin
+            tod_sec[3:0] <= tod_sec[3:0] + 1'b1;
+            if (tod_sec[3:0] == 4'h9) begin
+              tod_sec[3:0] <= 4'h0;
+              tod_sec[6:4] <= tod_sec[6:4] + 1'b1;
+            end
+            if (tod_sec == 7'h59) begin
+              tod_sec[6:4] <= 3'h0;
+              tod_min[3:0] <= tod_min[3:0] + 1'b1;
+            end
+            if (tod_min[3:0] == 4'h9 && tod_sec == 7'h59) begin
+              tod_min[3:0] <= 4'h0;
+              tod_min[6:4] <= tod_min[6:4] + 1'b1;
+            end
+            if (tod_min == 7'h59 && tod_sec == 7'h59) begin
+              tod_min[6:4] <= 3'h0;
+              tod_hr[3:0]  <= tod_hr[3:0] + 1'b1;
+            end
+            if (tod_hr[3:0] == 4'h9 && tod_min == 7'h59 && tod_sec == 7'h59) begin
+              tod_hr[4]   <= 1'b1;
+              tod_hr[3:0] <= tod_hr[4] ? tod_hr[3:0] + 1'b1 : 4'h0;
+            end
+            if (tod_min == 7'h59 && tod_sec == 7'h59)
+              if (tod_hr[4:0] == 5'h11) tod_hr[5] <= ~tod_hr[5];
+              else if (tod_hr[4:0] == 5'h12) tod_hr[4:0] <= 5'h01;
+          end
+        end
+      end
+      else tod_count <= 24'h0;
     end
-    else tod_alarm_reg <= 1'b0;
-    if (int_reset) icr[2] <= 1'b0;
+
+    if (phi2_p) begin
+      if (!tod_latched) tod_latch <= mode[1] ? tod_count : {tod_hr, tod_min, tod_sec, tod_10ths};
+      if ((mode[1] ? tod_count : {tod_hr, tod_min, tod_sec, tod_10ths}) == tod_alarm) begin
+        tod_alarm_reg <= 1'b1;
+        icr[2]   <= !tod_alarm_reg ? 1'b1 : icr[2];
+      end
+      else tod_alarm_reg <= 1'b0;
+      if (int_reset) icr[2] <= 1'b0;
+    end
   end
 end
 
 // Serial Port Input/Output
 always @(posedge clk) begin
   if (!res_n) begin
+    sp_shiftreg  = 8'h00;
+    sp_out       = 1'b1;
     sdr         <= 8'h00;
-    sp_out      <= 1'b1;
     sp_pending  <= 1'b0;
     sp_transmit <= 1'b0;
-    sp_shiftreg <= 8'h00;
     icr[3]      <= 1'b0;
     icr3        <= 1'b0;
   end
@@ -439,54 +492,58 @@ always @(posedge clk) begin
           end
       endcase
 
+    if (phi2_p) begin
+      if(int_reset) icr[3] <= 1'b0;
+      if(icr3) icr[3] <= 1'b1;
+      icr3 <= 1'b0;
+    end
+
     if (!cra[6]) begin // input
-      sp_out <= 1'b1;
-      if (cnt_in && !cnt_in_prev) sp_shiftreg <= {sp_shiftreg[6:0], sp_in};
-		if (!cnt_in && cnt_in_prev && cnt_pulsecnt == 3'h7) begin
-        sdr  <= sp_shiftreg;
-        icr3 <= 1'b1;
+      if (cnt_in && !cnt_in_prev) begin
+        sp_shiftreg = {sp_shiftreg[6:0], sp_in};
+        if (cnt_pulsecnt == 3'h0) begin
+          sdr  <= sp_shiftreg;
+          icr3 <= 1'b1;
+        end
       end
     end
     else begin // output
       if (sp_pending && !sp_transmit) begin
         sp_pending  <= 1'b0;
         sp_transmit <= 1'b1;
-        sp_shiftreg <= sdr;
+        sp_shiftreg  = sdr;
       end
       else if (!cnt_out_r && cnt_out) begin
         if (cnt_pulsecnt == 3'h7) begin
           icr3        <= 1'b1;
           sp_transmit <= 1'b0;
         end
-        sp_out      <= sp_shiftreg[7];
-        sp_shiftreg <= {sp_shiftreg[6:0], sp_shiftreg[0]};
+        { sp_out, sp_shiftreg[7:1]} = sp_shiftreg;
       end
-    end
-
-    if (phi2_p) begin
-		if(int_reset) icr[3] <= 1'b0;
-		if(icr3) icr[3] <= 1'b1;
-		icr3 <= 1'b0;
     end
   end
 end
 
 // CNT Input/Output
 always @(posedge clk) begin
+  reg cra6_prev;
   if (!res_n) begin
-    cnt_out_r <= 1'b1;
+    cnt_out_r    <= 1'b1;
     cnt_out      <= 1'b1;
     cnt_pulsecnt <= 3'h0;
+    cra6_prev    <= 1'b0;
   end
   else begin
+    cra6_prev <= cra[6];
     cnt_in_prev <= cnt_in;
     cnt_out <= cnt_out_r;
 
+    if (cra[6] != cra6_prev) cnt_pulsecnt <= 3'h0;
     if (cra[6] ? (!cnt_out_r && cnt_out) : (!cnt_in && cnt_in_prev)) cnt_pulsecnt <= cnt_pulsecnt + 1'b1;
 
     if (phi2_p) begin
-  	   if (!cra[6]) cnt_out_r <= 1'b1;
-      else if (sp_transmit & timerAoverflow) cnt_out_r <= ~cnt_out_r;
+      if (!cra[6]) cnt_out_r <= 1'b1;
+      else if (timerAoverflow) cnt_out_r <= ~(sp_transmit & cnt_out_r);
     end
   end
 end
@@ -507,13 +564,13 @@ always @(posedge clk) begin
     if (wr && rs == 4'hd) imr_reg <= db_in;
     if (rd && rs == 4'hd) int_reset <= 1;
 
-    if (phi2_p | mode) begin
+    if (phi2_p | (|mode)) begin
       imr <= imr_reg[7] ? imr | imr_reg[4:0] : imr & ~imr_reg[4:0];
       irq_n <= irq_n ? ~|(imr & icr_adj) : irq_n;
     end
     if (phi2_p & int_reset) begin
       irq_n <= 1;
-	  int_reset <= 0;
+      int_reset <= 0;
     end
   end
 end

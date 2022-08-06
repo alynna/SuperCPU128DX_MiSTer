@@ -3,8 +3,10 @@
 -- 
 -- for the C128 MiSTer FPGA core, by Erik Scheffers
 ---------------------------------------------------------------------------------
---
--- Alynna: 1mb MMU support as defined by the MMU manual :)
+-- Alynna: 
+-- v1 MMU - 1mb MMU support as defined by the Prog ref guide :)
+-- v2 MMU - 16mb MMU support -- highly compatible adaptation.
+
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -44,10 +46,10 @@ entity mmu8722 is
 		fsdiro: out std_logic;
 
 		-- system config
-		c128_n: out std_logic;         -- "0" C128, "1" C64
-		z80_n: out std_logic;          -- "0" Z80, "1" 8502
+		c128_n: out std_logic;		-- "0" C128, "1" C64
+		z80_n: out std_logic;		-- "0" Z80, "1" 8502
 		rombank: out unsigned(1 downto 0); -- "00" system rom  "01" internal rom "10" external rom "11" ram
-		iosel: out std_logic;              -- "0" select IO  "1" select rom/ram according to rombank																									 
+		iosel: out std_logic;              -- "0" select IO  "1" select rom/ram according to rombank
 		-- translated address bus
 		tAddr: out unsigned(15 downto 0);
 		cpuBank: out unsigned(7 downto 0);
@@ -56,6 +58,10 @@ entity mmu8722 is
 end mmu8722;
 
 architecture rtl of mmu8722 is
+
+  -- Define memsize for MMUv2 to be 2^n pages desired. 
+	-- "7" here is going to mean 128 pages.  For now.
+  constant MEMSIZE : integer := 7;
 
 	subtype configReg is unsigned(7 downto 0);
 	type configStore is array(3 downto 0) of configReg;
@@ -73,11 +79,11 @@ architecture rtl of mmu8722 is
 	signal reg_commonL : std_logic;
 	signal reg_commonSz : unsigned(1 downto 0);
 
-	signal reg_p0hb : unsigned(3 downto 0);
-	signal reg_p0h : unsigned(3 downto 0);
+	signal reg_p0hb : unsigned(7 downto 0);
+	signal reg_p0h : unsigned(7 downto 0);
 	signal reg_p0l : unsigned(7 downto 0);
-	signal reg_p1hb : unsigned(3 downto 0);
-	signal reg_p1h : unsigned(3 downto 0);
+	signal reg_p1hb : unsigned(7 downto 0);
+	signal reg_p1h : unsigned(7 downto 0);
 	signal reg_p1l : unsigned(7 downto 0) := X"01";
 	signal reg_pg2 : unsigned(7 downto 0) := X"02";
 	signal reg_pg3 : unsigned(7 downto 0) := X"03";
@@ -150,10 +156,10 @@ begin
 									  reg_vicbank <= di(7 downto 6);
 					when X"07" => reg_p0l <= di;
 									  reg_p0h <= reg_p0hb;
-					when X"08" => reg_p0hb <= di(3 downto 0);
+					when X"08" => reg_p0hb <= di;
 					when X"09" => reg_p1l <= di;
 									  reg_p1h <= reg_p1hb;
-					when X"0A" => reg_p1hb <= di(3 downto 0);
+					when X"0A" => reg_p1hb <= di;
 					when X"0C" => if sys16mb='1' then reg_pg2 <= di; end if;
 					when X"0D" => if sys16mb='1' then reg_pg3 <= di; end if;
 					when others => null;
@@ -187,10 +193,10 @@ begin
 	gameo <= game;
 	exromo <= exrom;
 	fsdiro <= fsdir;
-	systemMask <= X"FF" when sys16mb = '1' else ("000000" & sys256k & "1");
+	systemMask <= (MEMSIZE-1 downto 0 => '1', others => '0') when sys16mb = '1' else ("000000" & sys256k & "1");
 
 	translate_addr: process(clk)
-	variable bank: unsigned(1 downto 0);								 
+	variable bank: unsigned(7 downto 0);								 
 	variable cpuMask: unsigned(7 downto 0);
 	variable crBank: unsigned(3 downto 0);
 	variable page: unsigned(15 downto 8);
@@ -198,7 +204,6 @@ begin
 	variable commonPage: unsigned(7 downto 0);
 	variable commonMem: std_logic;
 	variable commonPageMask: unsigned(7 downto 0);
-	
 	begin
 		if rising_edge(clk) then
 			page := addr(15 downto 8);
@@ -226,30 +231,30 @@ begin
 					crBank := "00" & reg_cr(7 downto 6) and systemMask(3 downto 0);
 				end if;
 
-				cpuBank <= X"00";
-				if crBank = X"00" and addr(15 downto 12) = X"0" and reg_cpu = '0' and we = '0' then
+				bank := X"00";
+					if crBank = X"00" and addr(15 downto 12) = X"0" and reg_cpu = '0' and we = '0' then
 					-- When reading from $00xxx in Z80 mode, always read from $0Dxxx. Buslogic will enable ROM4
 					tPage := X"D" & addr(11 downto 8);
-				elsif page = X"01" then -- For compatibility reasons, stack and zero page relocation only possible in first 1mb
-					cpuBank <= "0000" & reg_p1h(3 downto 0) and cpuMask;
+				elsif page = X"01" then 
+					bank := reg_p1h and cpuMask;
 					tPage := reg_p1l;
 				elsif page = X"00" then
-					cpuBank <= "0000" & reg_p0h(3 downto 0) and cpuMask;
+					bank := reg_p0h and cpuMask;
 					tPage := reg_p0l;
 				elsif crBank = reg_p1h and page = reg_p1l then
-					cpuBank <= "0000" & reg_p1h(3 downto 0) and cpuMask;
+					bank := reg_p1h and cpuMask;
 					tPage := X"01";
 				elsif crBank = reg_p0h and page = reg_p0l then
-					cpuBank <= "0000" & reg_p0h(3 downto 0) and cpuMask;
+					bank :=  reg_p0h and cpuMask;
 					tPage := X"00";
 				elsif crBank = X"02" and sys16mb = '1' then
-					cpuBank <= reg_pg2;
+					bank := reg_pg2;
 					tPage := page;
 				elsif crBank = X"03" and sys16mb = '1' then
-					cpuBank <= reg_pg3;
+					bank := reg_pg3;
 					tPage := page;
 				else
-					cpuBank <= "0000" & crBank(3 downto 0);
+					bank := "0000" & crBank(3 downto 0);
 					tPage := page;
 				end if;
 
@@ -258,7 +263,7 @@ begin
 				when "11" => rombank <= reg_cr(5 downto 4);
 				when "10" => rombank <= reg_cr(3 downto 2);
 				when "01" => rombank <= '0' & reg_cr(1);
-				when "00" => rombank <= bank;
+				when "00" => rombank <= bank(1 downto 0);
 				end case;
 				iosel <= reg_cr(0);
 
@@ -296,19 +301,19 @@ begin
 						do <= reg_vicbank & "11" & reg_commonH & reg_commonL & reg_commonSz;
 					end if;
 				when X"07" => do <= reg_p0l;
-				when X"08" => do <= "1111" & reg_p0h;
+				when X"08" => do <= reg_p0h;
 				when X"09" => do <= reg_p1l;
-				when X"0A" => do <= "1111" & reg_p1h;
+				when X"0A" => do <= reg_p1h;
 				when X"0B" => 
 				  -- Low nybble - version number of mmu
 				  -- High nybble - 2^(hn-1) pages of RAM:
-				  -- 1 = 128k, 2 = 256k, 9 = 16384k, 15 = 2GB
+				  -- 1 = 128k, 2 = 256k, 8 = 16384k, 15 = 2GB
 				  -- ... 16MB ought to be enough for anyone ...
 				  if sys16mb = '0' then 
 						-- Version 0 MMU, 128/256kb RAM
 						do <= "00" & sys256k & (not sys256k) & "0000";
-					else-- Version 2 MMU, 16384kb RAM
-						do <= "10010010";
+					else-- Version 2 MMU, Realtime memsize calculation.
+						do <= to_unsigned(MEMSIZE,4) & "0010";
 				  end if;
 				when X"0C" => if sys16mb='1' then do <= reg_pg2; else do <= X"FF"; end if;
 				when X"0D" => if sys16mb='1' then do <= reg_pg3; else do <= X"FF"; end if;
