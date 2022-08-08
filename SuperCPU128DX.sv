@@ -204,6 +204,8 @@ localparam CONF_STR = {
    "-,to function.  See the MiSTer;",
    "-,    forum for details.;",
    "-;",
+	"O[107:106],Turbo Switch,2mhz,3mhz,4mhz,20mhz;",	
+   "-;",
    //"oUV,Boot Mode,Z80,C128,C64;", // for testing
    "H7S0,D64G64T64D81D71G71,Mount #8                    ;",
    "H0S1,D64G64T64D81D71G71,Mount #9                    ;",
@@ -285,8 +287,7 @@ localparam CONF_STR = {
 
 	"P3O[98],-VDC RAM exposed at bank 127,No,Yes;",
 	"P3O[99],-RAM @ D200-D3FF,No,Yes;",
-	"P3O[107:106],*Turbo Switch,2mhz,4mhz,8mhz,- 20mhz;",
-  "-;",
+   "-;",
    "O3,Swap Joysticks,No,Yes;",
    "-;",
    "R0,Reset;",
@@ -308,6 +309,7 @@ wire pll_locked;
 wire clk_sys;
 wire clk64;
 wire clk48;
+wire clk192;
 
 pll pll
 (
@@ -315,6 +317,7 @@ pll pll
    .outclk_0(clk48),
    .outclk_1(clk64),
    .outclk_2(clk_sys),
+   .outclk_3(clk192),
    .reconfig_to_pll(reconfig_to_pll),
    .reconfig_from_pll(reconfig_from_pll),
    .locked(pll_locked)
@@ -687,7 +690,7 @@ reg        io_cycle_we;
 reg [24:0] io_cycle_addr;
 reg  [7:0] io_cycle_data;
 
-localparam TAP_ADDR = 25'h0200000;
+localparam TAP_ADDR = 25'h0FE0000;
 localparam REU_ADDR = 25'h1000000;
 
 always @(posedge clk_sys) begin
@@ -996,6 +999,7 @@ wire  [7:0] vdcR, vdcG, vdcB;
 fpga64_sid_iec fpga64
 (
    .clk32(clk_sys),
+   .clk192(clk192),
    .reset_n(reset_n),
    .pause(freeze),
    .pause_out(c64_pause),
